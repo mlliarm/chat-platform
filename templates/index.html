@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Local LLM Chat</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <button id="new-chat-btn" class="new-chat-btn">+ New chat</button>
+      <div id="chat-list" class="chat-list"></div>
+      <div class="sidebar-footer">
+        <label for="model-select">Model</label>
+        <select id="model-select">
+          <option value="{{ default_model }}">{{ default_model }}</option>
+        </select>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div id="messages" class="messages">
+        <div class="empty-state">
+          <h1>What can I help with?</h1>
+          <p>Pick a model on the left and start typing below.</p>
+        </div>
+      </div>
+
+      <form id="chat-form" class="composer">
+        <textarea
+          id="prompt-input"
+          placeholder="Message the model..."
+          rows="1"
+          autofocus
+        ></textarea>
+        <button id="send-btn" type="submit" aria-label="Send">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 19V5M5 12l7-7 7 7" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </form>
+    </main>
+  </div>
+
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
