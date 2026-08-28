@@ -1,9 +1,12 @@
+import io
 import json
 import os
+import re
 
 import requests
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, render_template, request, stream_with_context
+from pypdf import PdfReader
 
 import db
 
@@ -19,7 +22,14 @@ APP_NAME = os.environ.get("APP_NAME", "Local OpenRouter Chat")
 
 DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", "openai/gpt-4o-mini")
 
+# Caps how much extracted file text gets folded into a message, to keep
+# attachments from blowing out a model's context window.
+MAX_ATTACHMENT_CHARS = 30_000
+
 app = Flask(__name__)
+# Covers both a multipart file upload to /api/extract and a base64 image
+# embedded in an /api/chat JSON body (base64 inflates size by ~4/3).
+app.config["MAX_CONTENT_LENGTH"] = 15 * 1024 * 1024
 
 
 def openrouter_headers():
@@ -67,9 +77,50 @@ def list_models():
     return jsonify(models)
 
 
-def make_title(text):
-    text = " ".join(text.split())
-    return text[:50] + ("…" if len(text) > 50 else "")
+ATTACHMENT_MARKER_RE = re.compile(r"\n\n<!--attachment:(.+?)-->")
+
+
+def make_title(text, has_image=False):
+    marker = ATTACHMENT_MARKER_RE.search(text)
+    head = " ".join((text[: marker.start()] if marker else text).split())
+    if not head:
+        if marker:
+            head = f"📎 {marker.group(1)}"
+        elif has_image:
+            head = "📷 Image"
+        else:
+            head = "New chat"
+    return head[:50] + ("…" if len(head) > 50 else "")
+
+
+@app.route("/api/extract", methods=["POST"])
+def extract_file():
+    """Reads an uploaded text file or PDF and returns its text so it can be folded into a message."""
+    file = request.files.get("file")
+    if not file:
+        return jsonify({"error": "No file provided"}), 400
+
+    filename = file.filename or "file"
+    raw = file.read()
+
+    if filename.lower().endswith(".pdf") or file.mimetype == "application/pdf":
+        try:
+            reader = PdfReader(io.BytesIO(raw))
+            text = "\n\n".join(page.extract_text() or "" for page in reader.pages)
+        except Exception as exc:
+            return jsonify({"error": f"Could not read PDF: {exc}"}), 400
+        if not text.strip():
+            return jsonify({"error": "No extractable text found in this PDF (it may be a scanned image)."}), 400
+    else:
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return jsonify({"error": "Unsupported file — please attach a text file, PDF, or image."}), 400
+
+    if len(text) > MAX_ATTACHMENT_CHARS:
+        text = text[:MAX_ATTACHMENT_CHARS] + "\n\n[...truncated...]"
+
+    return jsonify({"filename": filename, "text": text})
 
 
 @app.route("/api/chats")
@@ -98,22 +149,47 @@ def chat():
         return jsonify({"error": "OPENROUTER_API_KEY is not set on the server."}), 500
 
     body = request.get_json(force=True) or {}
-    user_message = body.get("message")
+    user_message = body.get("message") or ""
+    image = body.get("image")
     model = body.get("model") or DEFAULT_MODEL
     chat_id = body.get("chat_id")
 
-    if not user_message or not isinstance(user_message, str):
-        return jsonify({"error": "message must be a non-empty string"}), 400
+    if not isinstance(user_message, str):
+        return jsonify({"error": "message must be a string"}), 400
+    if image is not None and (not isinstance(image, str) or not image.startswith("data:image/")):
+        return jsonify({"error": "image must be a data: URL"}), 400
+    if not user_message.strip() and not image:
+        return jsonify({"error": "message must be non-empty, or include an image"}), 400
 
     is_new_chat = not chat_id or not db.chat_exists(chat_id)
     if is_new_chat:
-        chat_id = db.create_chat(title=make_title(user_message), model=model)
+        chat_id = db.create_chat(title=make_title(user_message, has_image=bool(image)), model=model)
+
+    # Image messages are stored as JSON ({"text", "image"}) so a follow-up
+    # turn can still send the image back to the model for context; plain
+    # messages (including text/PDF attachments already folded into the text
+    # by the frontend) stay as plain strings.
+    stored_content = json.dumps({"text": user_message, "image": image}) if image else user_message
 
     history = db.get_history(chat_id)
-    db.add_message(chat_id, "user", user_message)
+    db.add_message(chat_id, "user", stored_content)
 
-    messages = [{"role": m["role"], "content": m["content"]} for m in history]
-    messages.append({"role": "user", "content": user_message})
+    def to_openrouter_content(raw):
+        if raw.startswith("{"):
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, dict) and parsed.get("image"):
+                parts = []
+                if parsed.get("text"):
+                    parts.append({"type": "text", "text": parsed["text"]})
+                parts.append({"type": "image_url", "image_url": {"url": parsed["image"]}})
+                return parts
+        return raw
+
+    messages = [{"role": m["role"], "content": to_openrouter_content(m["content"])} for m in history]
+    messages.append({"role": "user", "content": to_openrouter_content(stored_content)})
 
     payload = {
         "model": model,

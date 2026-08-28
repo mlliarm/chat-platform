@@ -38,17 +38,35 @@
       </div>
 
       <form id="chat-form" class="composer">
-        <textarea
-          id="prompt-input"
-          placeholder="Message the model..."
-          rows="1"
-          autofocus
-        ></textarea>
-        <button id="send-btn" type="submit" aria-label="Send">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 19V5M5 12l7-7 7 7" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
+        <div id="attachment-preview" class="attachment-preview" hidden></div>
+        <div class="composer-row">
+          <input
+            type="file"
+            id="file-input"
+            hidden
+            accept=".txt,.md,.markdown,.csv,.json,.log,.py,.js,.ts,.jsx,.tsx,.html,.css,.yml,.yaml,.xml,.pdf,image/*"
+          />
+          <button type="button" id="attach-btn" class="icon-btn" aria-label="Attach a file" title="Attach a text file, PDF, or image">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <path
+                d="M21.44 11.05l-9.19 9.19a5 5 0 01-7.07-7.07l9.19-9.19a3.5 3.5 0 014.95 4.95l-9.19 9.19a2 2 0 01-2.83-2.83l8.49-8.48"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+          <textarea
+            id="prompt-input"
+            placeholder="Message the model..."
+            rows="1"
+            autofocus
+          ></textarea>
+          <button id="send-btn" type="submit" aria-label="Send">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 19V5M5 12l7-7 7 7" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+        </div>
       </form>
     </main>
   </div>

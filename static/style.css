@@ -338,6 +338,36 @@ body {
   margin-left: 2px;
 }
 
+.attached-image {
+  max-width: 280px;
+  max-height: 280px;
+  border-radius: 10px;
+  margin-top: 6px;
+  display: block;
+}
+
+.attachment-chip {
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.attachment-chip summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.attachment-chip pre {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  max-height: 300px;
+  overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
 /* Rendered Markdown (assistant replies) */
 .message-content.markdown-body {
   white-space: normal;
@@ -457,8 +487,84 @@ body {
   margin: 0 auto 24px;
   padding: 0 24px;
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.composer-row {
+  display: flex;
   align-items: flex-end;
   gap: 8px;
+}
+
+.icon-btn {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-sidebar);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-btn:hover {
+  background: var(--bg-user-bubble);
+  color: var(--text);
+}
+
+.attachment-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.attachment-preview[hidden] {
+  display: none;
+}
+
+.attachment-preview.error {
+  color: #c0392b;
+  border-color: #e5484d;
+}
+
+.attachment-preview img {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.attachment-preview .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 320px;
+}
+
+.attachment-preview .remove-btn {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.attachment-preview .remove-btn:hover {
+  color: #e5484d;
 }
 
 #prompt-input {

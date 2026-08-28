@@ -6,6 +6,13 @@ const modelSelect = document.getElementById("model-select");
 const newChatBtn = document.getElementById("new-chat-btn");
 const chatListEl = document.getElementById("chat-list");
 const freeOnlyToggle = document.getElementById("free-only-toggle");
+const attachBtn = document.getElementById("attach-btn");
+const fileInput = document.getElementById("file-input");
+const attachmentPreviewEl = document.getElementById("attachment-preview");
+
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const ATTACHMENT_MARKER_RE = /\n\n<!--attachment:(.+?)-->\n([\s\S]*?)\n<!--\/attachment-->$/;
 
 const EMPTY_STATE_HTML = `
   <div class="empty-state">
@@ -31,14 +38,72 @@ if (markdownReady) {
   console.warn("marked/DOMPurify failed to load from CDN; assistant replies will render as plain text.");
 }
 
+function tryParseImageContent(content) {
+  if (typeof content !== "string" || !content.startsWith("{")) return null;
+  try {
+    const parsed = JSON.parse(content);
+    if (parsed && typeof parsed === "object" && parsed.image) return parsed;
+  } catch {
+    // not JSON, fall through
+  }
+  return null;
+}
+
+function renderImageContent(el, { text, image }) {
+  el.textContent = "";
+  if (text) {
+    const p = document.createElement("div");
+    p.textContent = text;
+    el.appendChild(p);
+  }
+  const img = document.createElement("img");
+  img.src = image;
+  img.className = "attached-image";
+  img.alt = "Attached image";
+  el.appendChild(img);
+}
+
+function renderPlainOrAttachmentContent(el, content) {
+  const match = content.match(ATTACHMENT_MARKER_RE);
+  if (!match) {
+    el.textContent = content;
+    return;
+  }
+  const [, filename, fileText] = match;
+  const typed = content.slice(0, match.index);
+  el.textContent = "";
+  if (typed) {
+    const p = document.createElement("div");
+    p.textContent = typed;
+    el.appendChild(p);
+  }
+  const details = document.createElement("details");
+  details.className = "attachment-chip";
+  const summary = document.createElement("summary");
+  summary.textContent = `📎 ${filename}`;
+  const pre = document.createElement("pre");
+  pre.textContent = fileText;
+  details.appendChild(summary);
+  details.appendChild(pre);
+  el.appendChild(details);
+}
+
 function setMessageContent(el, role, content) {
+  el.classList.remove("markdown-body");
+
+  const imageContent = tryParseImageContent(content);
+  if (imageContent) {
+    renderImageContent(el, imageContent);
+    return;
+  }
+
   if (role === "assistant" && markdownReady) {
     el.classList.add("markdown-body");
     el.innerHTML = DOMPurify.sanitize(marked.parse(content));
-  } else {
-    el.classList.remove("markdown-body");
-    el.textContent = content;
+    return;
   }
+
+  renderPlainOrAttachmentContent(el, content);
 }
 
 function clearEmptyState() {
@@ -102,6 +167,94 @@ function renderError(message) {
   messagesEl.appendChild(banner);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
+
+let pendingAttachment = null; // {kind: "image", name, dataUrl} | {kind: "text", name, text}
+
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+function showAttachmentPreview({ name, thumb, loading, error }) {
+  attachmentPreviewEl.hidden = false;
+  attachmentPreviewEl.classList.toggle("error", !!error);
+  attachmentPreviewEl.innerHTML = "";
+
+  if (thumb) {
+    const img = document.createElement("img");
+    img.src = thumb;
+    attachmentPreviewEl.appendChild(img);
+  }
+
+  const nameEl = document.createElement("span");
+  nameEl.className = "name";
+  nameEl.textContent = error ? error : loading ? `Reading ${name}…` : `📎 ${name}`;
+  attachmentPreviewEl.appendChild(nameEl);
+
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.className = "remove-btn";
+  removeBtn.textContent = "✕";
+  removeBtn.setAttribute("aria-label", "Remove attachment");
+  removeBtn.addEventListener("click", clearAttachmentPreview);
+  attachmentPreviewEl.appendChild(removeBtn);
+}
+
+function showAttachmentError(message) {
+  pendingAttachment = null;
+  showAttachmentPreview({ name: "", error: message });
+}
+
+function clearAttachmentPreview() {
+  pendingAttachment = null;
+  attachmentPreviewEl.hidden = true;
+  attachmentPreviewEl.innerHTML = "";
+}
+
+attachBtn.addEventListener("click", () => fileInput.click());
+
+fileInput.addEventListener("change", async () => {
+  const file = fileInput.files[0];
+  fileInput.value = "";
+  if (!file) return;
+
+  if (file.type.startsWith("image/")) {
+    if (file.size > MAX_IMAGE_BYTES) {
+      showAttachmentError(`Image too large (max ${MAX_IMAGE_BYTES / 1024 / 1024}MB).`);
+      return;
+    }
+    try {
+      const dataUrl = await readFileAsDataURL(file);
+      pendingAttachment = { kind: "image", name: file.name, dataUrl };
+      showAttachmentPreview({ name: file.name, thumb: dataUrl });
+    } catch {
+      showAttachmentError("Could not read image file.");
+    }
+    return;
+  }
+
+  if (file.size > MAX_UPLOAD_BYTES) {
+    showAttachmentError(`File too large (max ${MAX_UPLOAD_BYTES / 1024 / 1024}MB).`);
+    return;
+  }
+
+  showAttachmentPreview({ name: file.name, loading: true });
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch("/api/extract", { method: "POST", body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Could not read file.");
+    pendingAttachment = { kind: "text", name: data.filename, text: data.text };
+    showAttachmentPreview({ name: data.filename });
+  } catch (err) {
+    showAttachmentError(err.message);
+  }
+});
 
 let allModels = [];
 let freeOnly = localStorage.getItem("freeOnly") === "true";
@@ -241,8 +394,23 @@ function startNewChat() {
 }
 
 async function sendMessage(text) {
+  const attachment = pendingAttachment;
+  clearAttachmentPreview();
+
+  let apiMessage = text;
+  let apiImage = null;
+  let displayContent = text;
+
+  if (attachment?.kind === "image") {
+    apiImage = attachment.dataUrl;
+    displayContent = JSON.stringify({ text, image: attachment.dataUrl });
+  } else if (attachment?.kind === "text") {
+    apiMessage = `${text}\n\n<!--attachment:${attachment.name}-->\n${attachment.text}\n<!--/attachment-->`;
+    displayContent = apiMessage;
+  }
+
   const now = new Date().toISOString();
-  renderMessage("user", text, now);
+  renderMessage("user", displayContent, now);
 
   const assistantMsg = renderMessage("assistant", "", now);
   const assistantEl = assistantMsg.contentEl;
@@ -255,7 +423,7 @@ async function sendMessage(text) {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: modelSelect.value, message: text, chat_id: currentChatId }),
+      body: JSON.stringify({ model: modelSelect.value, message: apiMessage, image: apiImage, chat_id: currentChatId }),
     });
 
     if (!res.ok || !res.body) {
@@ -292,7 +460,13 @@ async function sendMessage(text) {
           const wasNew = currentChatId === null;
           currentChatId = parsed.chat_id;
           if (parsed.is_new_chat) {
-            chats.unshift({ id: parsed.chat_id, title: text.slice(0, 50), model: modelSelect.value, updated_at: new Date().toISOString() });
+            const fallbackTitle = attachment?.kind === "image" ? "📷 Image" : attachment ? `📎 ${attachment.name}` : "New chat";
+            chats.unshift({
+              id: parsed.chat_id,
+              title: text.slice(0, 50) || fallbackTitle,
+              model: modelSelect.value,
+              updated_at: new Date().toISOString(),
+            });
           }
           if (wasNew) renderChatList();
           continue;
@@ -324,7 +498,7 @@ async function sendMessage(text) {
 formEl.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = inputEl.value.trim();
-  if (!text) return;
+  if (!text && !pendingAttachment) return;
   inputEl.value = "";
   inputEl.style.height = "auto";
   sendMessage(text);
