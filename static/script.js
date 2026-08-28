@@ -16,6 +16,30 @@ const EMPTY_STATE_HTML = `
 let currentChatId = null;
 let chats = []; // {id, title, model, updated_at}
 
+const markdownReady = typeof marked !== "undefined" && typeof DOMPurify !== "undefined";
+if (markdownReady) {
+  marked.setOptions({ breaks: true, gfm: true });
+  // Open links from model output in a new tab instead of navigating the app away.
+  DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+    if (node.tagName === "A") {
+      node.setAttribute("target", "_blank");
+      node.setAttribute("rel", "noopener noreferrer");
+    }
+  });
+} else {
+  console.warn("marked/DOMPurify failed to load from CDN; assistant replies will render as plain text.");
+}
+
+function setMessageContent(el, role, content) {
+  if (role === "assistant" && markdownReady) {
+    el.classList.add("markdown-body");
+    el.innerHTML = DOMPurify.sanitize(marked.parse(content));
+  } else {
+    el.classList.remove("markdown-body");
+    el.textContent = content;
+  }
+}
+
 function clearEmptyState() {
   const empty = messagesEl.querySelector(".empty-state");
   if (empty) empty.remove();
@@ -54,7 +78,7 @@ function renderMessage(role, content, timestamp) {
 
   const body = document.createElement("div");
   body.className = "message-content";
-  body.textContent = content;
+  setMessageContent(body, role, content);
 
   const time = document.createElement("div");
   time.className = "message-time";
@@ -256,7 +280,7 @@ async function sendMessage(text) {
         const delta = parsed.choices?.[0]?.delta?.content;
         if (delta) {
           assistantText += delta;
-          assistantEl.textContent = assistantText;
+          setMessageContent(assistantEl, "assistant", assistantText);
           messagesEl.scrollTop = messagesEl.scrollHeight;
         }
       }
