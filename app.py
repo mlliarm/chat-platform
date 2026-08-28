@@ -172,7 +172,7 @@ def chat():
     stored_content = json.dumps({"text": user_message, "image": image}) if image else user_message
 
     history = db.get_history(chat_id)
-    db.add_message(chat_id, "user", stored_content)
+    user_message_id = db.add_message(chat_id, "user", stored_content)
 
     def to_openrouter_content(raw):
         if raw.startswith("{"):
@@ -197,6 +197,18 @@ def chat():
         "stream": True,
     }
 
+    def rollback_payload(error_text):
+        # The exchange never produced a reply — don't let the rejected user
+        # message (e.g. an image a non-vision model refused) stick around and
+        # poison every later turn's replayed history. If that was the chat's
+        # only message, drop the whole (now-empty) chat too.
+        db.delete_message(user_message_id)
+        result = {"error": error_text, "rolled_back": True}
+        if is_new_chat and db.message_count(chat_id) == 0:
+            db.delete_chat(chat_id)
+            result["chat_deleted"] = True
+        return result
+
     def generate():
         # Sent first so the frontend can learn the chat_id for a brand-new chat.
         yield f"data: {json.dumps({'chat_id': chat_id, 'is_new_chat': is_new_chat})}\n\n"
@@ -211,7 +223,7 @@ def chat():
                 timeout=120,
             ) as upstream:
                 if upstream.status_code != 200:
-                    yield f"data: {json.dumps({'error': upstream.text})}\n\n"
+                    yield f"data: {json.dumps(rollback_payload(upstream.text))}\n\n"
                     return
 
                 # OpenRouter sends UTF-8 without a charset param on the SSE stream;
@@ -234,7 +246,13 @@ def chat():
                         pass
                     yield f"{line}\n\n"
         except requests.RequestException as exc:
-            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+            if assistant_text:
+                # Streaming had already started producing real content before the
+                # connection died — keep the user message, just report the error.
+                yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+            else:
+                yield f"data: {json.dumps(rollback_payload(str(exc)))}\n\n"
+            return
         finally:
             if assistant_text:
                 db.add_message(chat_id, "assistant", assistant_text)

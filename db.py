@@ -63,10 +63,22 @@ def touch_chat(chat_id):
 
 def add_message(chat_id, role, content):
     with get_conn() as conn:
-        conn.execute(
+        cur = conn.execute(
             "INSERT INTO messages (chat_id, role, content, created_at) VALUES (?, ?, ?, ?)",
             (chat_id, role, content, _now()),
         )
+    return cur.lastrowid
+
+
+def delete_message(message_id):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM messages WHERE id = ?", (message_id,))
+
+
+def message_count(chat_id):
+    with get_conn() as conn:
+        row = conn.execute("SELECT COUNT(*) AS n FROM messages WHERE chat_id = ?", (chat_id,)).fetchone()
+    return row["n"]
 
 
 def list_chats():

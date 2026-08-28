@@ -448,6 +448,8 @@ function startNewChat() {
 
 async function sendMessage(text) {
   const attachment = pendingAttachment;
+  const hadImageBefore = chatHasImage; // in case this attempt's message gets rolled back
+  let chatWasDeleted = false;
   clearAttachmentPreview();
 
   let apiMessage = text;
@@ -527,6 +529,17 @@ async function sendMessage(text) {
         }
 
         if (parsed.error) {
+          if (parsed.rolled_back) {
+            // The backend deleted the rejected message so it won't poison later
+            // turns' replayed history — mirror that by reverting our optimistic flag.
+            chatHasImage = hadImageBefore;
+          }
+          if (parsed.chat_deleted) {
+            chats = chats.filter((c) => c.id !== currentChatId);
+            currentChatId = null;
+            chatHasImage = false;
+            chatWasDeleted = true;
+          }
           throw new Error(typeof parsed.error === "string" ? parsed.error : JSON.stringify(parsed.error));
         }
 
@@ -540,6 +553,10 @@ async function sendMessage(text) {
     }
   } catch (err) {
     assistantMsg.row.remove();
+    if (chatWasDeleted) {
+      // Nothing left to show — the chat this message would have started was rolled back entirely.
+      messagesEl.innerHTML = EMPTY_STATE_HTML;
+    }
     const cleanMessage = extractErrorMessage(err.message);
     renderError(friendlyAttachmentError(cleanMessage, attachment, chatHasImage));
   } finally {
