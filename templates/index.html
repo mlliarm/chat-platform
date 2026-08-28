@@ -14,7 +14,13 @@
       <button id="new-chat-btn" class="new-chat-btn">+ New chat</button>
       <div id="chat-list" class="chat-list"></div>
       <div class="sidebar-footer">
-        <label for="model-select">Model</label>
+        <div class="model-label-row">
+          <label for="model-select">Model</label>
+          <label class="switch" title="Show only free models">
+            <input type="checkbox" id="free-only-toggle" />
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+          </label>
+        </div>
         <select id="model-select">
           <option value="{{ default_model }}">{{ default_model }}</option>
         </select>

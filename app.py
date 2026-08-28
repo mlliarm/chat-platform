@@ -36,6 +36,13 @@ def index():
     return render_template("index.html", default_model=DEFAULT_MODEL)
 
 
+def _is_free(pricing):
+    try:
+        return float(pricing.get("prompt", 1)) == 0 and float(pricing.get("completion", 1)) == 0
+    except (TypeError, ValueError):
+        return False
+
+
 @app.route("/api/models")
 def list_models():
     """Proxy OpenRouter's model catalog so the frontend can populate the picker."""
@@ -52,6 +59,7 @@ def list_models():
             "id": m.get("id"),
             "name": m.get("name", m.get("id")),
             "context_length": m.get("context_length"),
+            "is_free": _is_free(m.get("pricing") or {}),
         }
         for m in data
     ]

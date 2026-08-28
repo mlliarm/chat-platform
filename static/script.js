@@ -5,6 +5,7 @@ const sendBtn = document.getElementById("send-btn");
 const modelSelect = document.getElementById("model-select");
 const newChatBtn = document.getElementById("new-chat-btn");
 const chatListEl = document.getElementById("chat-list");
+const freeOnlyToggle = document.getElementById("free-only-toggle");
 
 const EMPTY_STATE_HTML = `
   <div class="empty-state">
@@ -102,28 +103,52 @@ function renderError(message) {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
+let allModels = [];
+let freeOnly = localStorage.getItem("freeOnly") === "true";
+freeOnlyToggle.checked = freeOnly;
+
+function populateModelSelect() {
+  const filtered = freeOnly ? allModels.filter((m) => m.is_free) : allModels;
+  const current = modelSelect.value;
+  modelSelect.innerHTML = "";
+
+  if (filtered.length === 0) {
+    const opt = document.createElement("option");
+    opt.textContent = "No free models available";
+    opt.disabled = true;
+    modelSelect.appendChild(opt);
+    return;
+  }
+
+  for (const m of filtered) {
+    const opt = document.createElement("option");
+    opt.value = m.id;
+    opt.textContent = m.is_free ? `${m.name} (Free)` : m.name;
+    modelSelect.appendChild(opt);
+  }
+  if (filtered.some((m) => m.id === current)) {
+    modelSelect.value = current;
+  }
+}
+
 async function loadModels() {
   try {
     const res = await fetch("/api/models");
     if (!res.ok) return; // keep the default option already in the select
     const models = await res.json();
     if (!Array.isArray(models) || models.length === 0) return;
-
-    const current = modelSelect.value;
-    modelSelect.innerHTML = "";
-    for (const m of models) {
-      const opt = document.createElement("option");
-      opt.value = m.id;
-      opt.textContent = m.name;
-      modelSelect.appendChild(opt);
-    }
-    if ([...modelSelect.options].some((o) => o.value === current)) {
-      modelSelect.value = current;
-    }
+    allModels = models;
+    populateModelSelect();
   } catch (err) {
     console.warn("Could not load model list, using default.", err);
   }
 }
+
+freeOnlyToggle.addEventListener("change", () => {
+  freeOnly = freeOnlyToggle.checked;
+  localStorage.setItem("freeOnly", String(freeOnly));
+  populateModelSelect();
+});
 
 function renderChatList() {
   chatListEl.innerHTML = "";
