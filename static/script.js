@@ -23,6 +23,7 @@ const EMPTY_STATE_HTML = `
 
 let currentChatId = null;
 let chats = []; // {id, title, model, updated_at}
+let chatHasImage = false; // whether the currently open chat has an image anywhere in its history
 
 const markdownReady = typeof marked !== "undefined" && typeof DOMPurify !== "undefined";
 if (markdownReady) {
@@ -159,6 +160,54 @@ function renderMessage(role, content, timestamp) {
   return { row, contentEl: body, timeEl: time };
 }
 
+function extractErrorMessage(raw) {
+  // Backend/OpenRouter errors sometimes arrive as a raw JSON envelope, e.g.
+  // {"error":{"message":"No endpoints found that support image input","code":404}} —
+  // pull out the actual human-readable message if there is one.
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed?.error?.message) return parsed.error.message;
+    if (typeof parsed?.error === "string") return parsed.error;
+  } catch {
+    // not JSON — raw is already a plain message
+  }
+  return raw;
+}
+
+function friendlyAttachmentError(message, attachment, chatHasImage) {
+  const lower = message.toLowerCase();
+
+  const missingVision =
+    lower.includes("image") &&
+    (lower.includes("no endpoints") || lower.includes("not support") || lower.includes("unsupported") || lower.includes("modality"));
+  if (missingVision) {
+    if (attachment?.kind === "image") {
+      return "🖼️ This model can't see images. Pick a vision-capable model (e.g. a GPT-4o, Claude, or Gemini variant) from the dropdown and send again.";
+    }
+    if (chatHasImage) {
+      // The current message has no image, but an earlier turn in this chat did —
+      // full history gets resent every turn, so that old image is still what's tripping this up.
+      return "🖼️ This model can't process images, and this conversation has one earlier in it. Switch to a vision-capable model, or start a new chat to leave the image out of the context.";
+    }
+    return "🖼️ This model doesn't support image input. Switch to a vision-capable model (e.g. a GPT-4o, Claude, or Gemini variant) and try again.";
+  }
+
+  const contextOverflow =
+    lower.includes("context length") ||
+    lower.includes("context_length") ||
+    lower.includes("maximum context") ||
+    lower.includes("token limit") ||
+    lower.includes("too many tokens") ||
+    lower.includes("too long");
+  if (attachment?.kind === "text" && contextOverflow) {
+    return attachment.fileType === "pdf"
+      ? "📄 That PDF is too long for this model's context window. Try a shorter document, or switch to a model with a larger context length."
+      : "📎 That file is too long for this model's context window. Try a shorter file, or switch to a model with a larger context length.";
+  }
+
+  return message;
+}
+
 function renderError(message) {
   clearEmptyState();
   const banner = document.createElement("div");
@@ -249,7 +298,8 @@ fileInput.addEventListener("change", async () => {
     const res = await fetch("/api/extract", { method: "POST", body: formData });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Could not read file.");
-    pendingAttachment = { kind: "text", name: data.filename, text: data.text };
+    const isPdf = file.name.toLowerCase().endsWith(".pdf") || file.type === "application/pdf";
+    pendingAttachment = { kind: "text", name: data.filename, text: data.text, fileType: isPdf ? "pdf" : "text" };
     showAttachmentPreview({ name: data.filename });
   } catch (err) {
     showAttachmentError(err.message);
@@ -359,6 +409,7 @@ async function openChat(chatId) {
     const chat = await res.json();
 
     currentChatId = chat.id;
+    chatHasImage = chat.messages.some((m) => tryParseImageContent(m.content));
     messagesEl.innerHTML = "";
     for (const m of chat.messages) {
       renderMessage(m.role, m.content, m.created_at);
@@ -379,6 +430,7 @@ async function deleteChat(chatId) {
     chats = chats.filter((c) => c.id !== chatId);
     if (chatId === currentChatId) {
       currentChatId = null;
+      chatHasImage = false;
       messagesEl.innerHTML = EMPTY_STATE_HTML;
     }
     renderChatList();
@@ -389,6 +441,7 @@ async function deleteChat(chatId) {
 
 function startNewChat() {
   currentChatId = null;
+  chatHasImage = false;
   messagesEl.innerHTML = EMPTY_STATE_HTML;
   renderChatList();
 }
@@ -404,6 +457,7 @@ async function sendMessage(text) {
   if (attachment?.kind === "image") {
     apiImage = attachment.dataUrl;
     displayContent = JSON.stringify({ text, image: attachment.dataUrl });
+    chatHasImage = true;
   } else if (attachment?.kind === "text") {
     apiMessage = `${text}\n\n<!--attachment:${attachment.name}-->\n${attachment.text}\n<!--/attachment-->`;
     displayContent = apiMessage;
@@ -486,7 +540,8 @@ async function sendMessage(text) {
     }
   } catch (err) {
     assistantMsg.row.remove();
-    renderError(`Error: ${err.message}`);
+    const cleanMessage = extractErrorMessage(err.message);
+    renderError(friendlyAttachmentError(cleanMessage, attachment, chatHasImage));
   } finally {
     assistantEl.classList.remove("streaming");
     sendBtn.disabled = false;
