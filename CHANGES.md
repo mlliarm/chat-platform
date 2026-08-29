@@ -179,3 +179,17 @@ commit is made.
   behind a code block was never actually drawn. Each code block is now
   wrapped in a `Table` cell styled with a background fill, border, and
   rounded corners, matching the browser's code block appearance.
+
+## f3c7676 — 2026-08-29 — fixed minor issue with bullets not being rendered
+
+### Fixed
+- A dash/numbered list immediately following a paragraph or heading with no
+  blank line in between (e.g. `**Explanation:**\n- item`) rendered as one
+  paragraph with literal `-`/`1.` text instead of a bullet/numbered list.
+  Unlike marked.js/CommonMark in the browser, python-markdown's parser won't
+  let a list interrupt a paragraph without a blank line separating them. A
+  blank line is now inserted before such a list before conversion — scoped
+  narrowly (zero-indent list marker directly after zero-indent, non-list
+  text) so it doesn't affect wrapped continuation lines inside an existing
+  list item, nested list items, or a `- `-looking line inside a fenced code
+  block.
