@@ -1,9 +1,12 @@
+import os
 import sqlite3
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
-DB_PATH = "chat.db"
+# Overridable so the test suite can point this at an isolated temp file
+# instead of the real chat.db.
+DB_PATH = os.environ.get("CHAT_DB_PATH", "chat.db")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS chats (

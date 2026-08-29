@@ -23,6 +23,18 @@ python app.py
 
 Then open http://localhost:5000
 
+## Running tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+Tests never touch the real `chat.db` — `db.DB_PATH` is redirected to an
+isolated temp file per test (see `tests/conftest.py`), and all OpenRouter
+network calls are mocked, so no API key or network access is needed to run
+the suite.
+
 ## How it works
 
 - `app.py` — Flask server. `/api/models` proxies OpenRouter's model catalog to
@@ -45,5 +57,5 @@ Then open http://localhost:5000
 
 - Swap `DEFAULT_MODEL` in `.env` to any OpenRouter model id (e.g.
   `anthropic/claude-sonnet-4.5`, `openai/gpt-4o`, `google/gemini-2.0-flash-001`).
-- This is boilerplate: no auth, no persistence, no rate limiting. Add those
-  before deploying anywhere beyond your own machine.
+- This is boilerplate: no auth, no rate limiting. Add those before deploying
+  anywhere beyond your own machine.
