@@ -193,3 +193,18 @@ commit is made.
   text) so it doesn't affect wrapped continuation lines inside an existing
   list item, nested list items, or a `- `-looking line inside a fenced code
   block.
+
+## 42e6607 — 2026-08-29 — added syntax highlight in the UI frontend
+
+### Added
+- Syntax highlighting for fenced code blocks in assistant replies, via
+  `highlight.js` (loaded from CDN). `marked`'s code-block renderer now runs
+  `hljs.highlight()` using the fence's language hint (e.g. `` ```python ``),
+  falling back to `hljs.highlightAuto()` when there's no hint or the
+  language isn't recognized; if `highlight.js` fails to load, code still
+  renders, just unhighlighted.
+- Light/dark `highlight.js` theme CSS swapped automatically via
+  `prefers-color-scheme`, matching the app's existing dark-mode handling;
+  the theme's own box background/padding is overridden so highlighted code
+  sits inside the app's existing purple code-block "bubble" instead of
+  nesting a second box.
