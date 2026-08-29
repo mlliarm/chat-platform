@@ -122,3 +122,42 @@ commit is made.
   (`ALTER TABLE ... ADD COLUMN`) that runs on startup and preserves all
   existing chats/messages — verified against both a synthetic
   pre-migration database and the real `chat.db`.
+
+## 100521a — 2026-08-29 — documented all changes so far, fixes and features implemented
+
+### Added
+- This `CHANGES.md` file: a chronological, one-section-per-commit log of
+  every feature and fix in the project, reconstructed from git history plus
+  conversation history.
+
+## bb403df — 2026-08-29 — added PDF export of chat feature
+
+### Added
+- 📄 PDF export button in the composer, to the left of the attach button
+  (enabled only once a chat is open): downloads the open conversation as a
+  PDF via a new `GET /api/chats/<id>/export` endpoint.
+- PDF built with `reportlab`: chat title, model, and each message with a
+  friendly formatted timestamp (`Aug 29, 2026, 09:01 AM`); attachment names
+  shown as a `📎 filename` note; attached images decoded from their stored
+  base64 data URL and embedded inline, scaled to fit the page.
+- 6 new tests: missing-chat 404, `Content-Disposition`/mimetype headers,
+  filename sanitization, plain-text and attachment-marker messages, and
+  image messages.
+
+## 9660dbe — 2026-08-29 — fixed issue of markdown not rendered in PDF output
+
+### Fixed
+- Assistant replies in exported PDFs showed raw Markdown syntax (literal
+  `**bold**`, `# Heading`, `` `code` ``, etc.) instead of rendered
+  formatting.
+
+### Added
+- New `markdown_pdf.py` module: converts an assistant message's Markdown
+  into `reportlab` flowables — bold/italic/inline code, headings (h1–h6, in
+  distinct sizes), bulleted and ordered lists (including nested block
+  content), fenced code blocks (monospace, shaded background), tables
+  (styled header row), blockquotes, clickable colored links, and horizontal
+  rules — mirroring the `marked.js` rendering already used in the browser.
+  User messages keep rendering as plain text, unchanged.
+- 11 new tests for the Markdown-to-PDF renderer, covering each construct
+  above plus a malformed-HTML fallback path.
