@@ -1,0 +1,9 @@
+DejaVu Sans / DejaVu Sans Mono fonts, bundled here to give PDF chat exports
+broad Unicode coverage (Greek, APL symbols, etc.) beyond the PDF standard
+fonts' Latin-1-only glyph set.
+
+Copyright (c) 2003 by Bitstream, Inc. All Rights Reserved. Bitstream Vera is
+a trademark of Bitstream, Inc. DejaVu changes are in the public domain.
+Licensed under the Bitstream Vera License — see
+https://dejavu-fonts.github.io/License.html for the full text. Free to use,
+copy, modify, and redistribute.

@@ -27,7 +27,7 @@ def test_bold_and_italic_and_inline_code() -> None:
     assert isinstance(para, Paragraph)
     assert "<b>bold</b>" in para.text
     assert "<i>italic</i>" in para.text
-    assert '<font face="Courier" size="9">code</font>' in para.text
+    assert '<font face="DejaVuSansMono" size="9">code</font>' in para.text
 
 
 def test_headings_use_distinct_larger_styles() -> None:
@@ -82,6 +82,45 @@ def test_mixed_document_produces_expected_flowable_sequence() -> None:
     flowables = markdown_flowables(text)
     kinds = [type(f).__name__ for f in flowables]
     assert kinds == ["Paragraph", "Paragraph", "ListFlowable", "Preformatted"]
+
+
+def test_matched_think_block_is_stripped() -> None:
+    flowables = markdown_flowables("<think>internal reasoning, ignore me</think>\n\nActual **answer** here.")
+    assert len(flowables) == 1
+    para = flowables[0]
+    assert isinstance(para, Paragraph)
+    assert "internal reasoning" not in para.text
+    assert "<b>answer</b>" in para.text
+
+
+def test_stray_unmatched_think_tag_does_not_break_markdown_rendering() -> None:
+    # Some reasoning models leave a bare closing </think> with no opening tag
+    # in the stored reply. That literal "<...>" text used to get passed
+    # through as raw (unescaped) HTML by python-markdown, producing a
+    # mismatched tag that broke the XML parse and silently fell back to a
+    # single unformatted paragraph for the whole message.
+    text = "Some **bold** reasoning summary.\n</think>\n\nThe real **answer**."
+    flowables = markdown_flowables(text)
+    assert len(flowables) == 2
+    assert all(isinstance(f, Paragraph) for f in flowables)
+    combined = "".join(f.text for f in flowables if isinstance(f, Paragraph))
+    assert "</think>" not in combined
+    assert "<b>bold</b>" in combined
+    assert "<b>answer</b>" in combined
+
+
+def test_only_think_content_returns_no_flowables() -> None:
+    assert markdown_flowables("<think>just reasoning, no visible reply</think>") == []
+
+
+def test_non_latin1_characters_use_unicode_capable_font() -> None:
+    # The PDF standard fonts (Helvetica etc.) only cover Latin-1 — Greek and
+    # APL symbols would render as blank boxes unless a Unicode font is used.
+    flowables = markdown_flowables("Ναι, γνωρίζω APL: `+/ 1 2 3`")
+    para = flowables[0]
+    assert isinstance(para, Paragraph)
+    assert para.style.fontName == "DejaVuSans"
+    assert "Ναι, γνωρίζω APL:" in para.text
 
 
 def test_malformed_html_fallback_still_returns_readable_text(monkeypatch: pytest.MonkeyPatch) -> None:

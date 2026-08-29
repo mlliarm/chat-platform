@@ -21,7 +21,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Flowable, Image as RLImage, Paragraph, SimpleDocTemplate
 
 import db
-from markdown_pdf import markdown_flowables
+from markdown_pdf import FONT_BOLD, FONT_REGULAR, markdown_flowables
 
 load_dotenv()
 db.init_db()
@@ -208,13 +208,16 @@ def chats_export_pdf(chat_id: str) -> ResponseReturnValue:
         return jsonify({"error": "Chat not found"}), 404
 
     styles = getSampleStyleSheet()
-    meta_style = ParagraphStyle("meta", parent=styles["Normal"], textColor=colors.HexColor("#666666"), spaceAfter=16)
-    role_style = ParagraphStyle("role", parent=styles["Normal"], fontName="Helvetica-Bold", spaceBefore=16, spaceAfter=4)
-    body_style = ParagraphStyle("body", parent=styles["Normal"], spaceAfter=6, leading=15)
+    title_style = ParagraphStyle("export-title", parent=styles["Title"], fontName=FONT_BOLD)
+    meta_style = ParagraphStyle(
+        "meta", parent=styles["Normal"], fontName=FONT_REGULAR, textColor=colors.HexColor("#666666"), spaceAfter=16
+    )
+    role_style = ParagraphStyle("role", parent=styles["Normal"], fontName=FONT_BOLD, spaceBefore=16, spaceAfter=4)
+    body_style = ParagraphStyle("body", parent=styles["Normal"], fontName=FONT_REGULAR, spaceAfter=6, leading=15)
     attachment_style = ParagraphStyle("attachment", parent=body_style, textColor=colors.HexColor("#666666"))
 
     story: list[Flowable] = [
-        Paragraph(xml_escape(chat["title"]), styles["Title"]),
+        Paragraph(xml_escape(chat["title"]), title_style),
         Paragraph(f"Model: {xml_escape(chat['model'] or '—')}", meta_style),
     ]
 

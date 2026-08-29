@@ -5,15 +5,38 @@ links, lists, tables, fenced code blocks) so an exported chat shows the same
 formatted output the user sees on screen, not raw Markdown syntax.
 """
 
+import os
+import re
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape as xml_escape
 
 import markdown as md_lib
 from reportlab.lib import colors
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Flowable, HRFlowable, ListFlowable, ListItem, Paragraph, Preformatted, Table, TableStyle
 
 MARKDOWN_EXTENSIONS = ["fenced_code", "tables", "nl2br", "sane_lists"]
+
+# The PDF standard fonts (Helvetica, Courier, ...) only cover Latin-1, so any
+# reply containing Greek, APL symbols, or other non-Latin-1 Unicode renders
+# those characters as blank boxes. DejaVu Sans/Mono (bundled in fonts/) cover
+# a much wider Unicode range and are used for every PDF-export style instead.
+_FONTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+FONT_REGULAR = "DejaVuSans"
+FONT_BOLD = "DejaVuSans-Bold"
+FONT_ITALIC = "DejaVuSans-Oblique"
+FONT_BOLD_ITALIC = "DejaVuSans-BoldOblique"
+FONT_MONO = "DejaVuSansMono"
+pdfmetrics.registerFont(TTFont(FONT_REGULAR, os.path.join(_FONTS_DIR, "DejaVuSans.ttf")))
+pdfmetrics.registerFont(TTFont(FONT_BOLD, os.path.join(_FONTS_DIR, "DejaVuSans-Bold.ttf")))
+pdfmetrics.registerFont(TTFont(FONT_ITALIC, os.path.join(_FONTS_DIR, "DejaVuSans-Oblique.ttf")))
+pdfmetrics.registerFont(TTFont(FONT_BOLD_ITALIC, os.path.join(_FONTS_DIR, "DejaVuSans-BoldOblique.ttf")))
+pdfmetrics.registerFont(TTFont(FONT_MONO, os.path.join(_FONTS_DIR, "DejaVuSansMono.ttf")))
+pdfmetrics.registerFontFamily(
+    FONT_REGULAR, normal=FONT_REGULAR, bold=FONT_BOLD, italic=FONT_ITALIC, boldItalic=FONT_BOLD_ITALIC
+)
 
 _NORMAL = getSampleStyleSheet()["Normal"]
 _ACCENT = colors.HexColor("#7c5cff")
@@ -22,26 +45,40 @@ _BORDER = colors.HexColor("#d8d0ea")
 _CODE_BG = colors.HexColor("#f3edfa")
 
 STYLES: dict[str, ParagraphStyle] = {
-    "body": ParagraphStyle("md-body", parent=_NORMAL, spaceAfter=8, leading=15),
-    "h1": ParagraphStyle("md-h1", parent=_NORMAL, fontName="Helvetica-Bold", fontSize=18, leading=22, spaceBefore=10, spaceAfter=8),
-    "h2": ParagraphStyle("md-h2", parent=_NORMAL, fontName="Helvetica-Bold", fontSize=15, leading=19, spaceBefore=10, spaceAfter=6),
-    "h3": ParagraphStyle("md-h3", parent=_NORMAL, fontName="Helvetica-Bold", fontSize=13, leading=17, spaceBefore=8, spaceAfter=6),
-    "h4": ParagraphStyle("md-h4", parent=_NORMAL, fontName="Helvetica-Bold", fontSize=11.5, leading=15, spaceBefore=8, spaceAfter=4),
+    "body": ParagraphStyle("md-body", parent=_NORMAL, fontName=FONT_REGULAR, spaceAfter=8, leading=15),
+    "h1": ParagraphStyle("md-h1", parent=_NORMAL, fontName=FONT_BOLD, fontSize=18, leading=22, spaceBefore=10, spaceAfter=8),
+    "h2": ParagraphStyle("md-h2", parent=_NORMAL, fontName=FONT_BOLD, fontSize=15, leading=19, spaceBefore=10, spaceAfter=6),
+    "h3": ParagraphStyle("md-h3", parent=_NORMAL, fontName=FONT_BOLD, fontSize=13, leading=17, spaceBefore=8, spaceAfter=6),
+    "h4": ParagraphStyle("md-h4", parent=_NORMAL, fontName=FONT_BOLD, fontSize=11.5, leading=15, spaceBefore=8, spaceAfter=4),
     "code": ParagraphStyle(
-        "md-code", parent=_NORMAL, fontName="Courier", fontSize=8.5, leading=11, backColor=_CODE_BG, borderPadding=6, spaceAfter=8
+        "md-code", parent=_NORMAL, fontName=FONT_MONO, fontSize=8.5, leading=11, backColor=_CODE_BG, borderPadding=6, spaceAfter=8
     ),
-    "quote": ParagraphStyle("md-quote", parent=_NORMAL, textColor=_MUTED, leftIndent=12, spaceAfter=8, leading=15),
-    "table_cell": ParagraphStyle("md-table-cell", parent=_NORMAL, fontSize=9, leading=12),
-    "table_header_cell": ParagraphStyle("md-table-header-cell", parent=_NORMAL, fontName="Helvetica-Bold", fontSize=9, leading=12),
+    "quote": ParagraphStyle("md-quote", parent=_NORMAL, fontName=FONT_REGULAR, textColor=_MUTED, leftIndent=12, spaceAfter=8, leading=15),
+    "table_cell": ParagraphStyle("md-table-cell", parent=_NORMAL, fontName=FONT_REGULAR, fontSize=9, leading=12),
+    "table_header_cell": ParagraphStyle("md-table-header-cell", parent=_NORMAL, fontName=FONT_BOLD, fontSize=9, leading=12),
 }
 STYLES["h5"] = STYLES["h4"]
 STYLES["h6"] = STYLES["h4"]
 
 _BLOCK_TAGS = {"p", "ul", "ol", "pre", "blockquote"}
 
+# Reasoning models (e.g. some OpenRouter models in "thinking" mode) sometimes
+# leave a <think>...</think> block — or, as observed, a stray closing
+# </think> with no opening tag — in the stored reply text. Markdown passes
+# literal "<...>"-looking text through as raw HTML, and an unmatched tag
+# breaks the XML parse below, silently falling back to one unformatted
+# paragraph for the whole message. Strip these before conversion.
+_THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+_STRAY_THINK_TAG_RE = re.compile(r"</?think>", re.IGNORECASE)
+
 
 def markdown_flowables(text: str) -> list[Flowable]:
     """Converts Markdown text into a list of flowables for a reportlab story."""
+    if not text.strip():
+        return []
+
+    text = _THINK_BLOCK_RE.sub("", text)
+    text = _STRAY_THINK_TAG_RE.sub("", text)
     if not text.strip():
         return []
 
@@ -72,7 +109,7 @@ def _inline_markup(el: ET.Element) -> str:
         elif tag in ("del", "s", "strike"):
             parts.append(f"<strike>{inner}</strike>")
         elif tag == "code":
-            parts.append(f'<font face="Courier" size="9">{xml_escape("".join(child.itertext()))}</font>')
+            parts.append(f'<font face="{FONT_MONO}" size="9">{xml_escape("".join(child.itertext()))}</font>')
         elif tag == "a":
             href = child.get("href", "")
             parts.append(f'<a href="{xml_escape(href)}" color="#7c5cff">{inner}</a>' if href else inner)

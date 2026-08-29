@@ -55,7 +55,12 @@ mypy
   `/api/chats/<id>/export` renders the full conversation to a PDF for
   download — assistant replies are rendered from Markdown into formatted
   headings/lists/tables/code blocks (`markdown_pdf.py`, using `reportlab` +
-  `Markdown`), not shown as raw Markdown syntax.
+  `Markdown`), not shown as raw Markdown syntax. Text is set in the bundled
+  DejaVu Sans/Mono fonts (`fonts/`) instead of the PDF standard fonts, since
+  those only cover Latin-1 and would show Greek, Cyrillic, APL symbols, etc.
+  as blank boxes. Any `<think>...</think>` reasoning-model artifact left in a
+  stored reply (including a stray, unmatched closing tag) is stripped before
+  rendering.
 - `db.py` — tiny SQLite layer (`chat.db`, created automatically) storing
   `chats` and `messages`. A chat's title is auto-derived from its first
   message.
