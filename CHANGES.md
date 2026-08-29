@@ -208,3 +208,25 @@ commit is made.
   the theme's own box background/padding is overridden so highlighted code
   sits inside the app's existing purple code-block "bubble" instead of
   nesting a second box.
+
+## 38722bf — 2026-08-29 — added syntax highlight with pygments in pdf export
+
+### Added
+- Syntax highlighting for fenced code blocks in exported PDFs, via
+  `Pygments`, so the coloring already shown in the browser (`highlight.js`)
+  persists in the PDF instead of code showing as plain monospace text.
+  Uses the fence's language hint, falling back to auto-detection when
+  there's none or it's unrecognized (e.g. APL, which Pygments has no
+  dedicated lexer for) — verified across 11 languages in a real chat.
+- Code blocks now render via reportlab's `XPreformatted` (a `Paragraph`
+  subclass) instead of plain `Preformatted`, since only `XPreformatted`
+  supports colored `<font>` spans while still preserving exact monospace
+  line/whitespace layout — including a color span that itself spans
+  multiple lines (e.g. a multi-line string or comment).
+
+### Fixed
+- Pygments' lexers commonly append a trailing newline internally for
+  correct tokenization even when the input code doesn't end with one; this
+  was introducing a spurious blank line at the end of highlighted code
+  blocks. The lexer's appended newline is now trimmed back off before
+  rendering.
