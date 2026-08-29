@@ -52,8 +52,10 @@ mypy
   OpenRouter with `stream: true`, relays the SSE stream to the browser, and
   persists both the user message and the finished assistant reply once
   streaming ends. `/api/chats` (list/get/delete/pin) backs the sidebar.
-  `/api/chats/<id>/export` renders the full conversation to a PDF (via
-  `reportlab`) for download.
+  `/api/chats/<id>/export` renders the full conversation to a PDF for
+  download — assistant replies are rendered from Markdown into formatted
+  headings/lists/tables/code blocks (`markdown_pdf.py`, using `reportlab` +
+  `Markdown`), not shown as raw Markdown syntax.
 - `db.py` — tiny SQLite layer (`chat.db`, created automatically) storing
   `chats` and `messages`. A chat's title is auto-derived from its first
   message.

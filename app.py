@@ -21,6 +21,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Flowable, Image as RLImage, Paragraph, SimpleDocTemplate
 
 import db
+from markdown_pdf import markdown_flowables
 
 load_dotenv()
 db.init_db()
@@ -224,7 +225,10 @@ def chats_export_pdf(chat_id: str) -> ResponseReturnValue:
 
         text, image_url, attachment_name = _parse_message_for_export(m["content"])
         if text.strip():
-            story.append(Paragraph(xml_escape(text).replace("\n", "<br/>"), body_style))
+            if m["role"] == "assistant":
+                story.extend(markdown_flowables(text))
+            else:
+                story.append(Paragraph(xml_escape(text).replace("\n", "<br/>"), body_style))
         if attachment_name:
             story.append(Paragraph(f"📎 {xml_escape(attachment_name)}", attachment_style))
         if image_url:
