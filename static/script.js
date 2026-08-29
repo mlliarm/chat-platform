@@ -422,8 +422,10 @@ function renderChatList() {
     delBtn.className = "delete-btn";
     delBtn.textContent = "✕";
     delBtn.setAttribute("aria-label", "Delete chat");
+    delBtn.title = "DELETE !";
     delBtn.addEventListener("click", (e) => {
       e.stopPropagation();
+      if (!window.confirm("This action will delete the whole thread and it's irreversible. Are you sure?")) return;
       deleteChat(c.id);
     });
 
