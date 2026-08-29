@@ -67,6 +67,10 @@ mypy
 - `static/script.js` — reads the streamed response chunk by chunk and renders
   tokens as they arrive; loads/saves the sidebar's chat list against the
   `/api/chats` endpoints and switches the active conversation on click.
+  Assistant Markdown is rendered via `marked` with a custom code-block
+  renderer that runs `highlight.js` on fenced code (using the fence's
+  language hint, falling back to auto-detection), so code in replies is
+  syntax-highlighted the same way in the UI as in exported PDFs.
 - `templates/index.html` + `static/style.css` — sidebar with past chats
   (click to reopen, ✕ to delete), a model selector, "New chat", plus a
   centered message list and composer, styled after Claude/ChatGPT.

@@ -472,6 +472,15 @@ body {
   white-space: pre;
 }
 
+/* highlight.js's theme CSS sets its own box background/padding on .hljs
+   (meant for a standalone code block) — override those two so highlighted
+   code sits inside our own purple "bubble" instead of nesting a second box.
+   Token colors (.hljs-keyword, .hljs-string, etc.) are untouched. */
+.markdown-body pre code.hljs {
+  background: none;
+  padding: 0;
+}
+
 .markdown-body blockquote {
   border-left: 3px solid var(--border);
   padding: 2px 0 2px 14px;

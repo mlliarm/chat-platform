@@ -41,6 +41,23 @@ if (markdownReady) {
       node.setAttribute("rel", "noopener noreferrer");
     }
   });
+
+  if (typeof hljs !== "undefined") {
+    marked.use({
+      renderer: {
+        code({ text, lang }) {
+          const language = lang && hljs.getLanguage(lang) ? lang : null;
+          const { value, language: detected } = language
+            ? hljs.highlight(text, { language })
+            : hljs.highlightAuto(text);
+          const langClass = detected ? ` language-${detected}` : "";
+          return `<pre><code class="hljs${langClass}">${value}</code></pre>`;
+        },
+      },
+    });
+  } else {
+    console.warn("highlight.js failed to load from CDN; code blocks will render without syntax highlighting.");
+  }
 } else {
   console.warn("marked/DOMPurify failed to load from CDN; assistant replies will render as plain text.");
 }
