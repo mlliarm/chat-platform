@@ -1,10 +1,19 @@
 """Tests for markdown_pdf.py — converts Markdown text into reportlab flowables
 for PDF export, mirroring what marked.js renders in the browser."""
 
+import re
+
 import pytest
-from reportlab.platypus import ListFlowable, Paragraph, Preformatted, Table
+from reportlab.platypus import ListFlowable, Paragraph, Table, XPreformatted
 
 from markdown_pdf import markdown_flowables
+
+_FONT_TAG_RE = re.compile(r"</?font[^>]*>")
+
+
+def strip_font_tags(markup: str) -> str:
+    """Reconstructs the plain code text from syntax-highlighted markup."""
+    return _FONT_TAG_RE.sub("", markup)
 
 
 def test_empty_text_returns_no_flowables() -> None:
@@ -54,18 +63,47 @@ def test_unordered_list_becomes_list_flowable() -> None:
     assert isinstance(flowables[0], ListFlowable)
 
 
-def test_fenced_code_block_becomes_a_shaded_bubble_and_keeps_raw_text() -> None:
+def test_fenced_code_block_becomes_a_shaded_bubble_with_syntax_highlighting() -> None:
     flowables = markdown_flowables("```python\nprint('hi')\n```")
     assert len(flowables) == 1
     bubble = flowables[0]
     # A bare Preformatted flowable silently ignores backColor/border styling
     # (reportlab quirk), so code blocks are wrapped in a shaded Table "bubble"
-    # instead — matching the browser's code block appearance.
+    # instead — matching the browser's code block appearance. XPreformatted
+    # (not Preformatted) is used so the syntax-highlighting color spans below
+    # can be applied while still preserving exact monospace line layout.
     assert isinstance(bubble, Table)
     pre = bubble._cellvalues[0][0]  # type: ignore[attr-defined]
-    assert isinstance(pre, Preformatted)
-    # The code content itself must not be markdown/HTML-escaped.
-    assert pre.lines == ["print('hi')"]
+    assert isinstance(pre, XPreformatted)
+    assert "<font color=" in pre.text
+    assert strip_font_tags(pre.text) == "print('hi')"
+
+
+def test_syntax_highlighting_uses_the_fence_language_hint() -> None:
+    flowables = markdown_flowables("```python\ndef foo():\n    return 1\n```")
+    pre = flowables[0]._cellvalues[0][0]  # type: ignore[attr-defined]
+    assert isinstance(pre, XPreformatted)
+    # "def" is a Python keyword and must be colored; the reconstructed plain
+    # text (tags stripped) must still be exactly the original code.
+    assert '<font color="#008000">def</font>' in pre.text
+    assert strip_font_tags(pre.text) == "def foo():\n    return 1"
+
+
+def test_syntax_highlighting_does_not_add_a_spurious_trailing_blank_line() -> None:
+    # Pygments lexers commonly append a trailing newline internally for
+    # correct tokenization even when the input doesn't end with one.
+    flowables = markdown_flowables("```python\nx = 1\n```")
+    pre = flowables[0]._cellvalues[0][0]  # type: ignore[attr-defined]
+    assert isinstance(pre, XPreformatted)
+    assert strip_font_tags(pre.text) == "x = 1"
+    assert not strip_font_tags(pre.text).endswith("\n")
+
+
+def test_unrecognized_language_falls_back_to_auto_detection_without_erroring() -> None:
+    flowables = markdown_flowables("```apl\nfact ← {×/ 1 ∘⍳ ⍵}\n```")
+    pre = flowables[0]._cellvalues[0][0]  # type: ignore[attr-defined]
+    assert isinstance(pre, XPreformatted)
+    assert strip_font_tags(pre.text) == "fact ← {×/ 1 ∘⍳ ⍵}"
 
 
 def test_table_becomes_table_flowable() -> None:
@@ -181,8 +219,8 @@ def test_dash_line_inside_fenced_code_block_is_left_as_code_not_turned_into_a_li
     kinds = [type(f).__name__ for f in flowables]
     assert kinds == ["Paragraph", "Table"]
     pre = flowables[1]._cellvalues[0][0]  # type: ignore[attr-defined]
-    assert isinstance(pre, Preformatted)
-    assert pre.lines == ["- not a list, just code", "more code"]
+    assert isinstance(pre, XPreformatted)
+    assert strip_font_tags(pre.text) == "- not a list, just code\nmore code"
 
 
 def test_malformed_html_fallback_still_returns_readable_text(monkeypatch: pytest.MonkeyPatch) -> None:

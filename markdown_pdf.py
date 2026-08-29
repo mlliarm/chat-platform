@@ -11,11 +11,25 @@ import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape as xml_escape
 
 import markdown as md_lib
+from pygments import lex
+from pygments.lexers import get_lexer_by_name, guess_lexer
+from pygments.style import Style
+from pygments.styles import get_style_by_name
+from pygments.util import ClassNotFound
 from reportlab.lib import colors
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import Flowable, HRFlowable, ListFlowable, ListItem, Paragraph, Preformatted, Table, TableStyle
+from reportlab.platypus import (
+    Flowable,
+    HRFlowable,
+    ListFlowable,
+    ListItem,
+    Paragraph,
+    Table,
+    TableStyle,
+    XPreformatted,
+)
 
 MARKDOWN_EXTENSIONS = ["fenced_code", "tables", "nl2br", "sane_lists"]
 
@@ -37,6 +51,12 @@ pdfmetrics.registerFont(TTFont(FONT_MONO, os.path.join(_FONTS_DIR, "DejaVuSansMo
 pdfmetrics.registerFontFamily(
     FONT_REGULAR, normal=FONT_REGULAR, bold=FONT_BOLD, italic=FONT_ITALIC, boldItalic=FONT_BOLD_ITALIC
 )
+
+# Syntax-highlighting for code blocks, mirroring the highlight.js coloring
+# already used for code blocks in the browser. Only token color is applied
+# (not Pygments' bold/italic flags) since that would need bold/italic variants
+# of the monospace font registered too, for no real gain over a color-only look.
+_PYGMENTS_STYLE: type[Style] = get_style_by_name("default")
 
 _NORMAL = getSampleStyleSheet()["Normal"]
 _ACCENT = colors.HexColor("#7c5cff")
@@ -174,7 +194,11 @@ def _render_block(el: ET.Element, body_style: ParagraphStyle | None = None) -> l
     if tag == "pre":
         code_el = el.find("code")
         code_text = "".join((code_el if code_el is not None else el).itertext())
-        return [_code_bubble(code_text.rstrip("\n"))]
+        # python-markdown's fenced_code extension puts the fence's language
+        # hint (e.g. ```python) on the <code> element as class="language-python".
+        css_class = code_el.get("class", "") if code_el is not None else ""
+        lang = css_class.removeprefix("language-") if css_class.startswith("language-") else None
+        return [_code_bubble(code_text.rstrip("\n"), lang)]
 
     if tag == "blockquote":
         flowables: list[Flowable] = []
@@ -193,11 +217,54 @@ def _render_block(el: ET.Element, body_style: ParagraphStyle | None = None) -> l
     return [Paragraph(markup, style)] if markup.strip() else []
 
 
-def _code_bubble(code_text: str) -> Table:
+def _highlighted_code_markup(code_text: str, lang: str | None) -> str:
+    """Syntax-highlights code into reportlab mini-markup (<font color="...">
+    spans), mirroring the highlight.js coloring already used in the browser."""
+    lexer = None
+    if lang:
+        try:
+            lexer = get_lexer_by_name(lang, stripnl=False)
+        except ClassNotFound:
+            lexer = None
+    if lexer is None:
+        try:
+            lexer = guess_lexer(code_text)
+        except ClassNotFound:
+            return xml_escape(code_text)
+
+    try:
+        tokens = list(lex(code_text, lexer))
+    except Exception:
+        return xml_escape(code_text)
+
+    # Pygments' lexers commonly append a trailing newline for correct
+    # tokenization even when the input doesn't end with one — drop it again
+    # so we don't introduce a blank line the original code block didn't have.
+    if tokens and not code_text.endswith("\n"):
+        last_type, last_value = tokens[-1]
+        if last_value.endswith("\n"):
+            trimmed = last_value[:-1]
+            if trimmed:
+                tokens[-1] = (last_type, trimmed)
+            else:
+                tokens.pop()
+
+    parts: list[str] = []
+    for token_type, value in tokens:
+        if not value:
+            continue
+        escaped = xml_escape(value)
+        color = _PYGMENTS_STYLE.style_for_token(token_type)["color"]
+        parts.append(f'<font color="#{color}">{escaped}</font>' if color else escaped)
+    return "".join(parts)
+
+
+def _code_bubble(code_text: str, lang: str | None) -> Table:
     """Wraps a fenced code block in a shaded, rounded box (a Table, since
     Preformatted itself can't draw a background) — matching the code block
     "bubble" the browser shows via marked.js."""
-    pre = Preformatted(code_text, STYLES["code"])
+    markup = _highlighted_code_markup(code_text, lang)
+    pre = XPreformatted(markup, STYLES["code"])
     table = Table([[pre]], hAlign="LEFT", spaceBefore=2, spaceAfter=8)
     style_cmds: list[tuple[object, ...]] = [
         ("BACKGROUND", (0, 0), (-1, -1), _CODE_BG),
