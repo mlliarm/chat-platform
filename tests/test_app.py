@@ -222,6 +222,47 @@ def test_chats_delete(client: FlaskClient, temp_db: ModuleType) -> None:
 
 
 # ---------------------------------------------------------------------------
+# POST /api/chats/<id>/pin
+# ---------------------------------------------------------------------------
+
+
+def test_pin_chat_moves_it_to_top_of_list(client: FlaskClient, temp_db: ModuleType) -> None:
+    older_id = temp_db.create_chat(title="Older", model="m")
+    temp_db.create_chat(title="Newer", model="m")  # more recently updated, would normally sort first
+
+    resp = client.post(f"/api/chats/{older_id}/pin", json={"pinned": True})
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True, "pinned": True}
+
+    listed = client.get("/api/chats").get_json()
+    assert listed[0]["id"] == older_id
+    assert listed[0]["pinned"] is True
+    assert listed[1]["pinned"] is False
+
+
+def test_unpin_chat(client: FlaskClient, temp_db: ModuleType) -> None:
+    chat_id = temp_db.create_chat(title="T", model="m")
+    temp_db.set_pinned(chat_id, True)
+
+    resp = client.post(f"/api/chats/{chat_id}/pin", json={"pinned": False})
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True, "pinned": False}
+    assert client.get("/api/chats").get_json()[0]["pinned"] is False
+
+
+def test_pin_defaults_to_true_when_no_body_sent(client: FlaskClient, temp_db: ModuleType) -> None:
+    chat_id = temp_db.create_chat(title="T", model="m")
+    resp = client.post(f"/api/chats/{chat_id}/pin")
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True, "pinned": True}
+
+
+def test_pin_nonexistent_chat_returns_404(client: FlaskClient) -> None:
+    resp = client.post("/api/chats/does-not-exist/pin", json={"pinned": True})
+    assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
 # POST /api/chat — validation
 # ---------------------------------------------------------------------------
 

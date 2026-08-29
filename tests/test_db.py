@@ -4,7 +4,11 @@ Every test uses the `temp_db` fixture (see conftest.py), which points
 db.DB_PATH at a fresh temp file per test. The real chat.db is never touched.
 """
 
+import sqlite3
+from pathlib import Path
 from types import ModuleType
+
+import pytest
 
 
 def test_init_db_is_idempotent(temp_db: ModuleType) -> None:
@@ -143,3 +147,86 @@ def test_delete_message_nonexistent_id_is_a_noop(temp_db: ModuleType) -> None:
     temp_db.add_message(chat_id, "user", "hi")
     temp_db.delete_message(999999)  # doesn't exist — should not raise
     assert temp_db.message_count(chat_id) == 1
+
+
+def test_new_chats_are_unpinned_by_default(temp_db: ModuleType) -> None:
+    chat_id = temp_db.create_chat(title="T", model="m")
+    chats = temp_db.list_chats()
+    assert chats[0]["id"] == chat_id
+    assert chats[0]["pinned"] is False
+
+
+def test_set_pinned_moves_chat_to_top_regardless_of_updated_at(temp_db: ModuleType) -> None:
+    older_id = temp_db.create_chat(title="Older", model="m")
+    newer_id = temp_db.create_chat(title="Newer", model="m")
+    # Newer is more recently updated, so it would normally sort first.
+    assert temp_db.list_chats()[0]["id"] == newer_id
+
+    temp_db.set_pinned(older_id, True)
+
+    chats = temp_db.list_chats()
+    assert chats[0]["id"] == older_id
+    assert chats[0]["pinned"] is True
+    assert chats[1]["id"] == newer_id
+    assert chats[1]["pinned"] is False
+
+
+def test_set_pinned_false_unpins(temp_db: ModuleType) -> None:
+    chat_id = temp_db.create_chat(title="T", model="m")
+    temp_db.set_pinned(chat_id, True)
+    assert temp_db.list_chats()[0]["pinned"] is True
+
+    temp_db.set_pinned(chat_id, False)
+    assert temp_db.list_chats()[0]["pinned"] is False
+
+
+def test_migration_adds_pinned_column_to_pre_existing_database(
+    tmp_path: Path, temp_db: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Simulates a chat.db created before the pinned column existed and
+    verifies init_db() patches the schema in place without losing data."""
+    old_db_path = tmp_path / "pre_migration.db"
+    conn = sqlite3.connect(str(old_db_path))
+    conn.execute(
+        """
+        CREATE TABLE chats (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            model TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO chats VALUES ('old-chat', 'Pre-migration chat', 'openai/gpt-4o-mini', '2026-01-01', '2026-01-01')"
+    )
+    conn.execute(
+        "INSERT INTO messages (chat_id, role, content, created_at) VALUES ('old-chat', 'user', 'hello', '2026-01-01')"
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(temp_db, "DB_PATH", str(old_db_path))
+    temp_db.init_db()
+
+    chats = temp_db.list_chats()
+    assert len(chats) == 1
+    assert chats[0]["id"] == "old-chat"
+    assert chats[0]["title"] == "Pre-migration chat"
+    assert chats[0]["pinned"] is False  # newly-added column defaults to unpinned
+    assert temp_db.get_history("old-chat") == [{"role": "user", "content": "hello"}]
+
+    temp_db.set_pinned("old-chat", True)
+    assert temp_db.list_chats()[0]["pinned"] is True

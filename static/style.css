@@ -115,6 +115,42 @@ body {
   color: var(--text-muted);
 }
 
+.chat-item .pin-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 4px;
+  opacity: 0.5;
+}
+
+.chat-item .pin-btn svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+
+.chat-item .pin-btn:hover {
+  opacity: 1;
+  background: var(--bg);
+}
+
+.chat-item .pin-btn.pinned {
+  opacity: 1;
+  color: #f5c518;
+}
+
+.chat-item .pin-btn.pinned svg {
+  fill: #f5c518;
+  stroke: #f5c518;
+}
+
 .chat-item .delete-btn {
   flex-shrink: 0;
   border: none;

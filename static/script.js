@@ -353,11 +353,27 @@ freeOnlyToggle.addEventListener("change", () => {
   populateModelSelect();
 });
 
+const STAR_ICON_SVG = `
+  <svg viewBox="0 0 24 24" width="15" height="15">
+    <path d="M12 2.5l3.09 6.26 6.91 1-5 4.87 1.18 6.88L12 17.77l-6.18 3.24L7 14.13l-5-4.87 6.91-1L12 2.5z" />
+  </svg>
+`;
+
 function renderChatList() {
   chatListEl.innerHTML = "";
   for (const c of chats) {
     const item = document.createElement("div");
     item.className = "chat-item" + (c.id === currentChatId ? " active" : "");
+
+    const pinBtn = document.createElement("button");
+    pinBtn.className = "pin-btn" + (c.pinned ? " pinned" : "");
+    pinBtn.innerHTML = STAR_ICON_SVG;
+    pinBtn.setAttribute("aria-label", c.pinned ? "Unpin chat" : "Pin chat");
+    pinBtn.title = c.pinned ? "Unpin chat" : "Pin chat";
+    pinBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      togglePin(c.id, !c.pinned);
+    });
 
     const main = document.createElement("div");
     main.className = "chat-item-main";
@@ -383,10 +399,24 @@ function renderChatList() {
       deleteChat(c.id);
     });
 
+    item.appendChild(pinBtn);
     item.appendChild(main);
     item.appendChild(delBtn);
     item.addEventListener("click", () => openChat(c.id));
     chatListEl.appendChild(item);
+  }
+}
+
+async function togglePin(chatId, pinned) {
+  try {
+    await fetch(`/api/chats/${chatId}/pin`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pinned }),
+    });
+    await loadChats();
+  } catch (err) {
+    console.warn("Could not update pin state.", err);
   }
 }
 
@@ -522,6 +552,7 @@ async function sendMessage(text) {
               title: text.slice(0, 50) || fallbackTitle,
               model: modelSelect.value,
               updated_at: new Date().toISOString(),
+              pinned: false,
             });
           }
           if (wasNew) renderChatList();

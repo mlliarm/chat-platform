@@ -146,6 +146,16 @@ def chats_delete(chat_id: str) -> ResponseReturnValue:
     return jsonify({"ok": True})
 
 
+@app.route("/api/chats/<chat_id>/pin", methods=["POST"])
+def chats_pin(chat_id: str) -> ResponseReturnValue:
+    if not db.chat_exists(chat_id):
+        return jsonify({"error": "Chat not found"}), 404
+    body: dict[str, Any] = request.get_json(silent=True) or {}
+    pinned = bool(body.get("pinned", True))
+    db.set_pinned(chat_id, pinned)
+    return jsonify({"ok": True, "pinned": pinned})
+
+
 @app.route("/api/chat", methods=["POST"])
 def chat() -> ResponseReturnValue:
     """Persists the user's message, streams the reply from OpenRouter as SSE, then persists it too."""

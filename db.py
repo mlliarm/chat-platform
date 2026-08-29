@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS chats (
     title TEXT NOT NULL,
     model TEXT,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    pinned INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -44,6 +45,19 @@ def get_conn() -> Iterator[sqlite3.Connection]:
 def init_db() -> None:
     with get_conn() as conn:
         conn.executescript(SCHEMA)
+        _migrate(conn)
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Adds columns introduced after a database's original creation.
+
+    CREATE TABLE IF NOT EXISTS only applies to brand-new files, so an
+    existing chat.db needs its schema patched up in place — this must never
+    touch existing rows' data, only add the new column.
+    """
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(chats)")}
+    if "pinned" not in columns:
+        conn.execute("ALTER TABLE chats ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
 
 
 def _now() -> str:
@@ -87,12 +101,20 @@ def message_count(chat_id: str) -> int:
     return int(row["n"])
 
 
+def set_pinned(chat_id: str, pinned: bool) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE chats SET pinned = ? WHERE id = ?", (1 if pinned else 0, chat_id))
+
+
 def list_chats() -> list[dict[str, Any]]:
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT id, title, model, updated_at FROM chats ORDER BY updated_at DESC"
+            "SELECT id, title, model, updated_at, pinned FROM chats ORDER BY pinned DESC, updated_at DESC"
         ).fetchall()
-    return [dict(r) for r in rows]
+    chats = [dict(r) for r in rows]
+    for c in chats:
+        c["pinned"] = bool(c["pinned"])
+    return chats
 
 
 def get_chat(chat_id: str) -> dict[str, Any] | None:
