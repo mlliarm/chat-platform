@@ -230,3 +230,15 @@ commit is made.
   was introducing a spurious blank line at the end of highlighted code
   blocks. The lexer's appended newline is now trimmed back off before
   rendering.
+
+## 82540e2 — 2026-08-29 — replaced download thread as PDF and added hover text over delete and a pop-up check
+
+### Changed
+- The composer's PDF-export button icon replaced with a plain down-arrow
+  "download" icon; its hover tooltip text is unchanged.
+
+### Added
+- Hover tooltip on each sidebar chat's ✕ delete button reading "DELETE !".
+- A confirm dialog before a chat is actually deleted: "This action will
+  delete the whole thread and it's irreversible. Are you sure?" — canceling
+  leaves the chat untouched, confirming deletes it as before.
