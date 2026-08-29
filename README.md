@@ -46,36 +46,59 @@ mypy
 
 ## How it works
 
-- `app.py` — Flask server. `/api/models` proxies OpenRouter's model catalog to
-  populate the picker; `/api/chat` takes just the chat id + the new user
-  message, loads prior history from SQLite, forwards the full conversation to
-  OpenRouter with `stream: true`, relays the SSE stream to the browser, and
-  persists both the user message and the finished assistant reply once
-  streaming ends. `/api/chats` (list/get/delete/pin) backs the sidebar.
-  `/api/chats/<id>/export` renders the full conversation to a PDF for
-  download — assistant replies are rendered from Markdown into formatted
-  headings/lists/tables/code blocks (`markdown_pdf.py`, using `reportlab` +
-  `Markdown`), not shown as raw Markdown syntax. Fenced code blocks are
-  syntax-highlighted with `Pygments` (using the fence's language hint,
-  falling back to auto-detection), matching the highlight.js coloring used
-  in the browser. Text is set in the bundled DejaVu Sans/Mono fonts
-  (`fonts/`) instead of the PDF standard fonts, since those only cover
-  Latin-1 and would show Greek, Cyrillic, APL symbols, etc. as blank boxes.
-  Any `<think>...</think>` reasoning-model artifact left in a stored reply
-  (including a stray, unmatched closing tag) is stripped before rendering.
-- `db.py` — tiny SQLite layer (`chat.db`, created automatically) storing
-  `chats` and `messages`. A chat's title is auto-derived from its first
-  message.
-- `static/script.js` — reads the streamed response chunk by chunk and renders
-  tokens as they arrive; loads/saves the sidebar's chat list against the
-  `/api/chats` endpoints and switches the active conversation on click.
-  Assistant Markdown is rendered via `marked` with a custom code-block
-  renderer that runs `highlight.js` on fenced code (using the fence's
-  language hint, falling back to auto-detection), so code in replies is
-  syntax-highlighted the same way in the UI as in exported PDFs.
-- `templates/index.html` + `static/style.css` — sidebar with past chats
-  (click to reopen, ✕ to delete), a model selector, "New chat", plus a
-  centered message list and composer, styled after Claude/ChatGPT.
+The app is a thin Flask backend that proxies chat completions to OpenRouter
+and streams them to a vanilla-JS frontend over Server-Sent Events (SSE),
+with SQLite for persistence.
+
+### Architecture
+
+```mermaid
+flowchart TD
+    subgraph Browser
+        HTML["index.html + style.css<br/>(layout, theme)"]
+        JS["script.js<br/>(SSE client, marked + highlight.js,<br/>sidebar/attachments state)"]
+    end
+
+    subgraph Server[app.py]
+        Routes["Routes<br/>(REST + SSE streaming — see Files below)"]
+        PDF["markdown_pdf.py<br/>(Markdown to reportlab flowables,<br/>Pygments highlighting, Unicode fonts)"]
+    end
+
+    DB[("chat.db (SQLite)<br/>via db.py")]
+    OR["OpenRouter API"]
+
+    JS -->|"fetch / SSE stream"| Routes
+    Routes -->|"CRUD"| DB
+    Routes -->|"chat/completions, stream: true"| OR
+    Routes -->|"render"| PDF
+    PDF -->|"PDF bytes"| JS
+```
+
+### Sending a message
+
+```mermaid
+flowchart TD
+    A["User types a message and hits Send"] --> B["POST /api/chat"]
+    B --> C["Save the user message to chat.db"]
+    C --> D["Load the chat's prior history from chat.db"]
+    D --> E["Forward full history + new message to OpenRouter<br/>(stream: true)"]
+    E --> F{"OpenRouter response"}
+    F -->|"200, streaming"| G["Relay SSE chunks to the browser as they arrive"]
+    G --> H["script.js appends tokens live to the message bubble"]
+    H --> I["Stream ends: save the full assistant reply to chat.db"]
+    F -->|"error / rejected<br/>(e.g. image sent to a non-vision model)"| J["Roll back: delete the just-saved user message<br/>(and the chat too, if it was brand new)"]
+    J --> K["Browser shows a friendly, specific error message"]
+```
+
+### Files
+
+| File | Responsibility |
+| --- | --- |
+| `app.py` | Flask routes: streamed chat completions (`/api/chat`), model catalog (`/api/models`), file/PDF text extraction (`/api/extract`), chat list/get/delete/pin (`/api/chats...`), PDF export (`/api/chats/<id>/export`). |
+| `db.py` | SQLite persistence layer (`chat.db`, created automatically) — `chats` and `messages` tables, auto-migrated schema, chat titles derived from the first message. |
+| `markdown_pdf.py` | Renders an assistant reply's Markdown into `reportlab` PDF content: headings, lists, tables, blockquotes, and Pygments-syntax-highlighted code blocks. Uses bundled DejaVu Sans/Mono fonts (`fonts/`) instead of the PDF standard fonts, since those only cover Latin-1 and would show Greek, Cyrillic, APL symbols, etc. as blank boxes. Strips any `<think>...</think>` reasoning-model artifact (including a stray, unmatched closing tag) before rendering. |
+| `static/script.js` | Reads the SSE stream chunk by chunk and renders tokens live; renders Markdown via `marked` with a `highlight.js` code-block renderer so code is syntax-highlighted the same way as in exported PDFs; manages the sidebar's chat list and attachment state. |
+| `templates/index.html` + `static/style.css` | Sidebar with past chats (click to reopen, ✕ to delete, ⭐ to pin), model selector, "New chat", centered message list and composer — styled after Claude/ChatGPT, with a light/dark theme. |
 
 ## Notes
 
