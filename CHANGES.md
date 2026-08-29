@@ -123,13 +123,6 @@ commit is made.
   existing chats/messages — verified against both a synthetic
   pre-migration database and the real `chat.db`.
 
-## 100521a — 2026-08-29 — documented all changes so far, fixes and features implemented
-
-### Added
-- This `CHANGES.md` file: a chronological, one-section-per-commit log of
-  every feature and fix in the project, reconstructed from git history plus
-  conversation history.
-
 ## bb403df — 2026-08-29 — added PDF export of chat feature
 
 ### Added
@@ -161,3 +154,28 @@ commit is made.
   User messages keep rendering as plain text, unchanged.
 - 11 new tests for the Markdown-to-PDF renderer, covering each construct
   above plus a malformed-HTML fallback path.
+
+## bf021fc — 2026-08-29 — fixed PDF rendering and APL/Greek
+
+### Fixed
+- A reasoning model's stray, unmatched `</think>` closing tag (left over from
+  its chain-of-thought, with no opening tag) was passed through by Markdown
+  as raw HTML, breaking the exporter's XML parser and silently falling back
+  to one plain, unformatted paragraph for the whole message. `<think>...</think>`
+  blocks and stray unmatched tags are now stripped before rendering.
+- Accented Greek characters and several APL symbols (`⍳`, `⌽`, `⊂`, `⊃`, …)
+  rendered as blank boxes in exported PDFs, because `reportlab`'s standard
+  fonts only cover Latin-1. DejaVu Sans/Sans-Bold/Sans-Oblique/Sans-BoldOblique
+  and DejaVu Sans Mono (bundled under `fonts/`, permissively licensed) are
+  now used for every PDF-export style instead, covering Greek and most of
+  the APL symbol range.
+
+## c934cc6 — 2026-08-29 — added code block bubbles in PDF output too
+
+### Fixed
+- Fenced code blocks in exported PDFs showed as plain monospace text with no
+  visible background — `reportlab`'s `Preformatted` flowable silently
+  ignores `backColor`/border styling on its style, so the shaded "bubble"
+  behind a code block was never actually drawn. Each code block is now
+  wrapped in a `Table` cell styled with a background fill, border, and
+  rounded corners, matching the browser's code block appearance.
