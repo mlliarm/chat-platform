@@ -72,6 +72,38 @@ _BLOCK_TAGS = {"p", "ul", "ol", "pre", "blockquote"}
 _THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 _STRAY_THINK_TAG_RE = re.compile(r"</?think>", re.IGNORECASE)
 
+# Unlike marked.js/CommonMark (used in the browser), python-markdown's classic
+# parser won't let a list interrupt a paragraph — a "- item" line right after
+# prose, with no blank line between them, is treated as a lazy continuation of
+# that paragraph instead of the start of a new list. Only fires for a
+# zero-indent list item directly after zero-indent, non-list prose, so it
+# won't touch a wrapped continuation line inside an existing list item (those
+# are indented) or fenced code content that happens to start with "- ".
+_FENCE_LINE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
+_TOP_LEVEL_LIST_MARKER_RE = re.compile(r"^([-*+]|\d+[.)])\s+\S")
+
+
+def _ensure_blank_line_before_lists(text: str) -> str:
+    lines = text.split("\n")
+    out: list[str] = []
+    in_fence = False
+    for i, line in enumerate(lines):
+        is_fence_line = bool(_FENCE_LINE_RE.match(line))
+        if (
+            not in_fence
+            and not is_fence_line
+            and i > 0
+            and _TOP_LEVEL_LIST_MARKER_RE.match(line)
+            and lines[i - 1].strip()
+            and not lines[i - 1][:1].isspace()
+            and not _TOP_LEVEL_LIST_MARKER_RE.match(lines[i - 1])
+        ):
+            out.append("")
+        out.append(line)
+        if is_fence_line:
+            in_fence = not in_fence
+    return "\n".join(out)
+
 
 def markdown_flowables(text: str) -> list[Flowable]:
     """Converts Markdown text into a list of flowables for a reportlab story."""
@@ -83,6 +115,7 @@ def markdown_flowables(text: str) -> list[Flowable]:
     if not text.strip():
         return []
 
+    text = _ensure_blank_line_before_lists(text)
     html = md_lib.markdown(text, extensions=MARKDOWN_EXTENSIONS)
     try:
         root = ET.fromstring(f"<div>{html}</div>")

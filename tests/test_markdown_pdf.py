@@ -129,6 +129,62 @@ def test_non_latin1_characters_use_unicode_capable_font() -> None:
     assert "Ναι, γνωρίζω APL:" in para.text
 
 
+def test_list_immediately_after_paragraph_with_no_blank_line_still_becomes_a_list() -> None:
+    # python-markdown's classic parser (unlike marked.js/CommonMark) won't let
+    # a list interrupt a paragraph without a blank line between them — this
+    # used to render as one paragraph with literal "- " text instead of bullets.
+    text = "**Explanation:**\n- first point\n- second point"
+    flowables = markdown_flowables(text)
+    assert len(flowables) == 2
+    intro, bullets = flowables
+    assert isinstance(intro, Paragraph)
+    assert intro.text == "<b>Explanation:</b>"
+    assert isinstance(bullets, ListFlowable)
+
+
+def test_ordered_list_immediately_after_paragraph_also_becomes_a_list() -> None:
+    text = "Steps:\n1. one\n2. two"
+    flowables = markdown_flowables(text)
+    assert len(flowables) == 2
+    assert isinstance(flowables[1], ListFlowable)
+
+
+def test_list_after_heading_with_no_blank_line_becomes_a_list() -> None:
+    text = "### Section\n- a\n- b"
+    flowables = markdown_flowables(text)
+    assert len(flowables) == 2
+    heading, bullets = flowables
+    assert isinstance(heading, Paragraph)
+    assert heading.style.name == "md-h3"
+    assert isinstance(bullets, ListFlowable)
+
+
+def test_wrapped_continuation_line_inside_a_list_item_is_not_split_into_two_lists() -> None:
+    # A continuation line indented under a bullet is part of that list item,
+    # not a paragraph the next bullet needs separating from.
+    text = "- Item one continues\n  on a second line\n- Item two"
+    flowables = markdown_flowables(text)
+    assert len(flowables) == 1
+    assert isinstance(flowables[0], ListFlowable)
+
+
+def test_nested_list_right_after_parent_item_is_not_given_a_spurious_gap() -> None:
+    text = "- Parent item\n  - Nested item"
+    flowables = markdown_flowables(text)
+    assert len(flowables) == 1
+    assert isinstance(flowables[0], ListFlowable)
+
+
+def test_dash_line_inside_fenced_code_block_is_left_as_code_not_turned_into_a_list() -> None:
+    text = "Some text\n```\n- not a list, just code\nmore code\n```"
+    flowables = markdown_flowables(text)
+    kinds = [type(f).__name__ for f in flowables]
+    assert kinds == ["Paragraph", "Table"]
+    pre = flowables[1]._cellvalues[0][0]  # type: ignore[attr-defined]
+    assert isinstance(pre, Preformatted)
+    assert pre.lines == ["- not a list, just code", "more code"]
+
+
 def test_malformed_html_fallback_still_returns_readable_text(monkeypatch: pytest.MonkeyPatch) -> None:
     import xml.etree.ElementTree as ET
 
