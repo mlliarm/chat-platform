@@ -9,8 +9,13 @@ is never touched.
 """
 
 import json
+from collections.abc import Iterator
+from types import ModuleType
+from typing import Any
 
+import pytest
 import requests
+from flask.testing import FlaskClient
 
 import app as app_module
 from conftest import FakeGetResponse, FakeStreamResponse, sse_lines_for_reply
@@ -21,9 +26,9 @@ TINY_PNG = (
 )
 
 
-def parse_sse(body_text):
+def parse_sse(body_text: str) -> list[dict[str, Any]]:
     """Parses raw 'data: {...}' SSE text into a list of decoded JSON payloads."""
-    events = []
+    events: list[dict[str, Any]] = []
     for chunk in body_text.split("\n\n"):
         chunk = chunk.strip()
         if not chunk.startswith("data:"):
@@ -40,7 +45,7 @@ def parse_sse(body_text):
 # ---------------------------------------------------------------------------
 
 
-def test_index_renders_with_default_model(client):
+def test_index_renders_with_default_model(client: FlaskClient) -> None:
     resp = client.get("/")
     assert resp.status_code == 200
     assert b"openai/gpt-4o-mini" in resp.data
@@ -51,14 +56,14 @@ def test_index_renders_with_default_model(client):
 # ---------------------------------------------------------------------------
 
 
-def test_list_models_without_api_key_returns_500(client, monkeypatch):
+def test_list_models_without_api_key_returns_500(client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(app_module, "OPENROUTER_API_KEY", None)
     resp = client.get("/api/models")
     assert resp.status_code == 500
-    assert "error" in resp.get_json()
+    assert "error" in (resp.get_json() or {})
 
 
-def test_list_models_classifies_free_and_sorts(client, monkeypatch):
+def test_list_models_classifies_free_and_sorts(client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
     fake_data = {
         "data": [
             {"id": "b/paid", "name": "Bravo", "context_length": 4096, "pricing": {"prompt": "0.001", "completion": "0.002"}},
@@ -79,7 +84,7 @@ def test_list_models_classifies_free_and_sorts(client, monkeypatch):
     assert by_id["c/no-pricing"]["is_free"] is False  # missing pricing must not be misread as free
 
 
-def test_list_models_upstream_failure_propagates_status(client, monkeypatch):
+def test_list_models_upstream_failure_propagates_status(client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(app_module.requests, "get", lambda *a, **k: FakeGetResponse(503, text="upstream down"))
     resp = client.get("/api/models")
     assert resp.status_code == 503
@@ -90,12 +95,12 @@ def test_list_models_upstream_failure_propagates_status(client, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_extract_no_file_returns_400(client):
+def test_extract_no_file_returns_400(client: FlaskClient) -> None:
     resp = client.post("/api/extract", data={})
     assert resp.status_code == 400
 
 
-def test_extract_plain_text_file(client):
+def test_extract_plain_text_file(client: FlaskClient) -> None:
     from io import BytesIO
 
     data = {"file": (BytesIO(b"Hello, this is a test file."), "notes.txt")}
@@ -106,16 +111,16 @@ def test_extract_plain_text_file(client):
     assert body["text"] == "Hello, this is a test file."
 
 
-def test_extract_unsupported_binary_file_returns_400(client):
+def test_extract_unsupported_binary_file_returns_400(client: FlaskClient) -> None:
     from io import BytesIO
 
     data = {"file": (BytesIO(bytes(range(256))), "weird.bin")}
     resp = client.post("/api/extract", data=data, content_type="multipart/form-data")
     assert resp.status_code == 400
-    assert "error" in resp.get_json()
+    assert "error" in (resp.get_json() or {})
 
 
-def test_extract_truncates_long_text(client, monkeypatch):
+def test_extract_truncates_long_text(client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
     from io import BytesIO
 
     monkeypatch.setattr(app_module, "MAX_ATTACHMENT_CHARS", 100)
@@ -128,47 +133,48 @@ def test_extract_truncates_long_text(client, monkeypatch):
     assert body["text"].endswith("[...truncated...]")
 
 
-def test_extract_pdf_with_text(client, monkeypatch):
+def test_extract_pdf_with_text(client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
     from io import BytesIO
 
     class FakePage:
-        def extract_text(self):
+        def extract_text(self) -> str:
             return "Real extracted PDF text."
 
     class FakeReader:
-        def __init__(self, *_args, **_kwargs):
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
             self.pages = [FakePage()]
 
     monkeypatch.setattr(app_module, "PdfReader", FakeReader)
     data = {"file": (BytesIO(b"%PDF-fake-bytes"), "doc.pdf")}
     resp = client.post("/api/extract", data=data, content_type="multipart/form-data")
     assert resp.status_code == 200
-    assert resp.get_json()["text"] == "Real extracted PDF text."
+    assert (resp.get_json() or {})["text"] == "Real extracted PDF text."
 
 
-def test_extract_pdf_with_no_text_returns_400(client, monkeypatch):
+def test_extract_pdf_with_no_text_returns_400(client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
     from io import BytesIO
 
     class FakePage:
-        def extract_text(self):
+        def extract_text(self) -> str:
             return ""
 
     class FakeReader:
-        def __init__(self, *_args, **_kwargs):
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
             self.pages = [FakePage()]
 
     monkeypatch.setattr(app_module, "PdfReader", FakeReader)
     data = {"file": (BytesIO(b"%PDF-fake-bytes"), "scanned.pdf")}
     resp = client.post("/api/extract", data=data, content_type="multipart/form-data")
     assert resp.status_code == 400
-    assert "scanned" in resp.get_json()["error"].lower() or "extractable" in resp.get_json()["error"].lower()
+    error = (resp.get_json() or {})["error"].lower()
+    assert "scanned" in error or "extractable" in error
 
 
-def test_extract_pdf_reader_error_returns_400(client, monkeypatch):
+def test_extract_pdf_reader_error_returns_400(client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
     from io import BytesIO
 
     class ExplodingReader:
-        def __init__(self, *_args, **_kwargs):
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
             raise ValueError("corrupt PDF")
 
     monkeypatch.setattr(app_module, "PdfReader", ExplodingReader)
@@ -182,13 +188,13 @@ def test_extract_pdf_reader_error_returns_400(client, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_chats_list_empty(client):
+def test_chats_list_empty(client: FlaskClient) -> None:
     resp = client.get("/api/chats")
     assert resp.status_code == 200
     assert resp.get_json() == []
 
 
-def test_chats_list_and_get(client, temp_db):
+def test_chats_list_and_get(client: FlaskClient, temp_db: ModuleType) -> None:
     chat_id = temp_db.create_chat(title="Hi there", model="openai/gpt-4o-mini")
     temp_db.add_message(chat_id, "user", "hello")
 
@@ -202,12 +208,12 @@ def test_chats_list_and_get(client, temp_db):
     assert detail["messages"] == [{"role": "user", "content": "hello", "created_at": detail["messages"][0]["created_at"]}]
 
 
-def test_chats_get_missing_returns_404(client):
+def test_chats_get_missing_returns_404(client: FlaskClient) -> None:
     resp = client.get("/api/chats/does-not-exist")
     assert resp.status_code == 404
 
 
-def test_chats_delete(client, temp_db):
+def test_chats_delete(client: FlaskClient, temp_db: ModuleType) -> None:
     chat_id = temp_db.create_chat(title="Bye", model="m")
     resp = client.delete(f"/api/chats/{chat_id}")
     assert resp.status_code == 200
@@ -220,18 +226,18 @@ def test_chats_delete(client, temp_db):
 # ---------------------------------------------------------------------------
 
 
-def test_chat_without_api_key_returns_500(client, monkeypatch):
+def test_chat_without_api_key_returns_500(client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(app_module, "OPENROUTER_API_KEY", None)
     resp = client.post("/api/chat", json={"message": "hi"})
     assert resp.status_code == 500
 
 
-def test_chat_empty_message_no_image_returns_400(client):
+def test_chat_empty_message_no_image_returns_400(client: FlaskClient) -> None:
     resp = client.post("/api/chat", json={"message": "   ", "chat_id": None})
     assert resp.status_code == 400
 
 
-def test_chat_invalid_image_url_returns_400(client):
+def test_chat_invalid_image_url_returns_400(client: FlaskClient) -> None:
     resp = client.post("/api/chat", json={"message": "hi", "image": "not-a-data-url"})
     assert resp.status_code == 400
 
@@ -241,7 +247,9 @@ def test_chat_invalid_image_url_returns_400(client):
 # ---------------------------------------------------------------------------
 
 
-def test_chat_success_streams_reply_and_persists_both_messages(client, temp_db, monkeypatch):
+def test_chat_success_streams_reply_and_persists_both_messages(
+    client: FlaskClient, temp_db: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
     fake_upstream = FakeStreamResponse(200, sse_lines_for_reply(["Hello", " world"]))
     monkeypatch.setattr(app_module.requests, "post", lambda *a, **k: fake_upstream)
 
@@ -266,14 +274,23 @@ def test_chat_success_streams_reply_and_persists_both_messages(client, temp_db, 
     assert fake_upstream.encoding == "utf-8"
 
 
-def test_chat_continues_existing_chat_with_full_history(client, temp_db, monkeypatch):
+def test_chat_continues_existing_chat_with_full_history(
+    client: FlaskClient, temp_db: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
     chat_id = temp_db.create_chat(title="Existing", model="openai/gpt-4o-mini")
     temp_db.add_message(chat_id, "user", "first turn")
     temp_db.add_message(chat_id, "assistant", "first reply")
 
-    captured_payload = {}
+    captured_payload: dict[str, Any] = {}
 
-    def fake_post(url, headers=None, json=None, stream=None, timeout=None):
+    def fake_post(
+        url: str,
+        headers: dict[str, str] | None = None,
+        json: dict[str, Any] | None = None,
+        stream: bool | None = None,
+        timeout: int | None = None,
+    ) -> FakeStreamResponse:
+        assert json is not None
         captured_payload["messages"] = json["messages"]
         return FakeStreamResponse(200, sse_lines_for_reply(["ok"]))
 
@@ -293,7 +310,7 @@ def test_chat_continues_existing_chat_with_full_history(client, temp_db, monkeyp
     ]
 
 
-def test_chat_with_nonexistent_chat_id_creates_a_new_chat(client, monkeypatch):
+def test_chat_with_nonexistent_chat_id_creates_a_new_chat(client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(app_module.requests, "post", lambda *a, **k: FakeStreamResponse(200, sse_lines_for_reply(["hi"])))
     resp = client.post("/api/chat", json={"message": "hello", "chat_id": "totally-bogus-id"})
     events = parse_sse(resp.get_data(as_text=True))
@@ -306,7 +323,9 @@ def test_chat_with_nonexistent_chat_id_creates_a_new_chat(client, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_chat_image_only_message_gets_image_title_and_json_storage(client, temp_db, monkeypatch):
+def test_chat_image_only_message_gets_image_title_and_json_storage(
+    client: FlaskClient, temp_db: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(app_module.requests, "post", lambda *a, **k: FakeStreamResponse(200, sse_lines_for_reply(["I see a cat"])))
 
     resp = client.post("/api/chat", json={"message": "", "image": TINY_PNG, "chat_id": None})
@@ -320,10 +339,17 @@ def test_chat_image_only_message_gets_image_title_and_json_storage(client, temp_
     assert stored == {"text": "", "image": TINY_PNG}
 
 
-def test_chat_image_is_converted_to_vision_content_blocks(client, monkeypatch):
-    captured_payload = {}
+def test_chat_image_is_converted_to_vision_content_blocks(client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    captured_payload: dict[str, Any] = {}
 
-    def fake_post(url, headers=None, json=None, stream=None, timeout=None):
+    def fake_post(
+        url: str,
+        headers: dict[str, str] | None = None,
+        json: dict[str, Any] | None = None,
+        stream: bool | None = None,
+        timeout: int | None = None,
+    ) -> FakeStreamResponse:
+        assert json is not None
         captured_payload["messages"] = json["messages"]
         return FakeStreamResponse(200, sse_lines_for_reply(["ok"]))
 
@@ -340,14 +366,23 @@ def test_chat_image_is_converted_to_vision_content_blocks(client, monkeypatch):
     ]
 
 
-def test_chat_image_from_history_is_replayed_as_vision_block(client, temp_db, monkeypatch):
+def test_chat_image_from_history_is_replayed_as_vision_block(
+    client: FlaskClient, temp_db: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
     chat_id = temp_db.create_chat(title="Img chat", model="m")
     temp_db.add_message(chat_id, "user", json.dumps({"text": "look", "image": TINY_PNG}))
     temp_db.add_message(chat_id, "assistant", "I see it")
 
-    captured_payload = {}
+    captured_payload: dict[str, Any] = {}
 
-    def fake_post(url, headers=None, json=None, stream=None, timeout=None):
+    def fake_post(
+        url: str,
+        headers: dict[str, str] | None = None,
+        json: dict[str, Any] | None = None,
+        stream: bool | None = None,
+        timeout: int | None = None,
+    ) -> FakeStreamResponse:
+        assert json is not None
         captured_payload["messages"] = json["messages"]
         return FakeStreamResponse(200, sse_lines_for_reply(["ok"]))
 
@@ -367,7 +402,9 @@ def test_chat_image_from_history_is_replayed_as_vision_block(client, temp_db, mo
 # ---------------------------------------------------------------------------
 
 
-def test_chat_title_strips_attachment_marker_when_text_present(client, temp_db, monkeypatch):
+def test_chat_title_strips_attachment_marker_when_text_present(
+    client: FlaskClient, temp_db: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(app_module.requests, "post", lambda *a, **k: FakeStreamResponse(200, sse_lines_for_reply(["ok"])))
     message = "Please summarize this\n\n<!--attachment:notes.txt-->\nThe quick brown fox.\n<!--/attachment-->"
 
@@ -379,14 +416,18 @@ def test_chat_title_strips_attachment_marker_when_text_present(client, temp_db, 
     assert chat["messages"][0]["content"] == message  # full content (with marker) preserved for the model/history
 
 
-def test_chat_title_falls_back_to_filename_when_no_typed_text(client, temp_db, monkeypatch):
+def test_chat_title_falls_back_to_filename_when_no_typed_text(
+    client: FlaskClient, temp_db: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(app_module.requests, "post", lambda *a, **k: FakeStreamResponse(200, sse_lines_for_reply(["ok"])))
     message = "\n\n<!--attachment:report.pdf-->\nSome extracted PDF content.\n<!--/attachment-->"
 
     resp = client.post("/api/chat", json={"message": message, "chat_id": None})
     chat_id = parse_sse(resp.get_data(as_text=True))[0]["chat_id"]
 
-    assert temp_db.get_chat(chat_id)["title"] == "📎 report.pdf"
+    chat = temp_db.get_chat(chat_id)
+    assert chat is not None
+    assert chat["title"] == "📎 report.pdf"
 
 
 # ---------------------------------------------------------------------------
@@ -394,7 +435,9 @@ def test_chat_title_falls_back_to_filename_when_no_typed_text(client, temp_db, m
 # ---------------------------------------------------------------------------
 
 
-def test_chat_failure_on_brand_new_chat_deletes_the_whole_chat(client, temp_db, monkeypatch):
+def test_chat_failure_on_brand_new_chat_deletes_the_whole_chat(
+    client: FlaskClient, temp_db: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
     error_body = '{"error":{"message":"No endpoints found that support image input","code":404}}'
     monkeypatch.setattr(app_module.requests, "post", lambda *a, **k: FakeStreamResponse(404, text=error_body))
 
@@ -410,7 +453,9 @@ def test_chat_failure_on_brand_new_chat_deletes_the_whole_chat(client, temp_db, 
     assert after == before  # no ghost chat left behind
 
 
-def test_chat_failure_on_existing_chat_only_rolls_back_the_new_message(client, temp_db, monkeypatch):
+def test_chat_failure_on_existing_chat_only_rolls_back_the_new_message(
+    client: FlaskClient, temp_db: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
     chat_id = temp_db.create_chat(title="Existing", model="m")
     temp_db.add_message(chat_id, "user", "real first message")
     temp_db.add_message(chat_id, "assistant", "real reply")
@@ -433,7 +478,9 @@ def test_chat_failure_on_existing_chat_only_rolls_back_the_new_message(client, t
     ]
 
 
-def test_chat_failure_leaves_no_trace_in_next_turns_history(client, temp_db, monkeypatch):
+def test_chat_failure_leaves_no_trace_in_next_turns_history(
+    client: FlaskClient, temp_db: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The exact bug scenario: a rejected image must not poison a later plain-text turn."""
     chat_id = temp_db.create_chat(title="Existing", model="m")
     temp_db.add_message(chat_id, "user", "hello")
@@ -443,9 +490,16 @@ def test_chat_failure_leaves_no_trace_in_next_turns_history(client, temp_db, mon
     monkeypatch.setattr(app_module.requests, "post", lambda *a, **k: FakeStreamResponse(404, text=error_body))
     client.post("/api/chat", json={"message": "", "image": TINY_PNG, "chat_id": chat_id}).get_data()
 
-    captured_payload = {}
+    captured_payload: dict[str, Any] = {}
 
-    def fake_post_success(url, headers=None, json=None, stream=None, timeout=None):
+    def fake_post_success(
+        url: str,
+        headers: dict[str, str] | None = None,
+        json: dict[str, Any] | None = None,
+        stream: bool | None = None,
+        timeout: int | None = None,
+    ) -> FakeStreamResponse:
+        assert json is not None
         captured_payload["messages"] = json["messages"]
         return FakeStreamResponse(200, sse_lines_for_reply(["ok"]))
 
@@ -457,8 +511,10 @@ def test_chat_failure_leaves_no_trace_in_next_turns_history(client, temp_db, mon
         assert not (isinstance(msg["content"], list))
 
 
-def test_chat_connection_error_before_any_content_rolls_back(client, temp_db, monkeypatch):
-    def raise_connection_error(*a, **k):
+def test_chat_connection_error_before_any_content_rolls_back(
+    client: FlaskClient, temp_db: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def raise_connection_error(*a: Any, **k: Any) -> FakeStreamResponse:
         raise requests.exceptions.ConnectionError("network is down")
 
     monkeypatch.setattr(app_module.requests, "post", raise_connection_error)
@@ -470,8 +526,10 @@ def test_chat_connection_error_before_any_content_rolls_back(client, temp_db, mo
     assert len(temp_db.list_chats()) == before
 
 
-def test_chat_connection_error_after_partial_content_is_kept(client, temp_db, monkeypatch):
-    def partial_then_raise():
+def test_chat_connection_error_after_partial_content_is_kept(
+    client: FlaskClient, temp_db: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def partial_then_raise() -> Iterator[str]:
         yield 'data: {"choices":[{"delta":{"content":"Partial answer"}}]}'
         raise requests.exceptions.ConnectionError("connection reset mid-stream")
 
@@ -486,6 +544,7 @@ def test_chat_connection_error_after_partial_content_is_kept(client, temp_db, mo
     assert "rolled_back" not in error_event  # partial content already came through — don't discard it
 
     chat = temp_db.get_chat(chat_id)
+    assert chat is not None
     assert [(m["role"], m["content"]) for m in chat["messages"]] == [
         ("user", "hello"),
         ("assistant", "Partial answer"),

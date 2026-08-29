@@ -2,10 +2,13 @@ import io
 import json
 import os
 import re
+from collections.abc import Iterator
+from typing import Any
 
 import requests
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, render_template, request, stream_with_context
+from flask.typing import ResponseReturnValue
 from pypdf import PdfReader
 
 import db
@@ -13,7 +16,7 @@ import db
 load_dotenv()
 db.init_db()
 
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+OPENROUTER_API_KEY: str | None = os.environ.get("OPENROUTER_API_KEY")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 # Shown in the app's own HTTP headers to OpenRouter (their leaderboard/analytics), not required.
@@ -32,7 +35,7 @@ app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 15 * 1024 * 1024
 
 
-def openrouter_headers():
+def openrouter_headers() -> dict[str, str]:
     return {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
@@ -42,11 +45,11 @@ def openrouter_headers():
 
 
 @app.route("/")
-def index():
+def index() -> str:
     return render_template("index.html", default_model=DEFAULT_MODEL)
 
 
-def _is_free(pricing):
+def _is_free(pricing: dict[str, Any]) -> bool:
     try:
         return float(pricing.get("prompt", 1)) == 0 and float(pricing.get("completion", 1)) == 0
     except (TypeError, ValueError):
@@ -54,7 +57,7 @@ def _is_free(pricing):
 
 
 @app.route("/api/models")
-def list_models():
+def list_models() -> ResponseReturnValue:
     """Proxy OpenRouter's model catalog so the frontend can populate the picker."""
     if not OPENROUTER_API_KEY:
         return jsonify({"error": "OPENROUTER_API_KEY is not set on the server."}), 500
@@ -63,8 +66,8 @@ def list_models():
     if resp.status_code != 200:
         return jsonify({"error": "Failed to fetch models from OpenRouter", "detail": resp.text}), resp.status_code
 
-    data = resp.json().get("data", [])
-    models = [
+    data: list[dict[str, Any]] = resp.json().get("data", [])
+    models: list[dict[str, Any]] = [
         {
             "id": m.get("id"),
             "name": m.get("name", m.get("id")),
@@ -80,7 +83,7 @@ def list_models():
 ATTACHMENT_MARKER_RE = re.compile(r"\n\n<!--attachment:(.+?)-->")
 
 
-def make_title(text, has_image=False):
+def make_title(text: str, has_image: bool = False) -> str:
     marker = ATTACHMENT_MARKER_RE.search(text)
     head = " ".join((text[: marker.start()] if marker else text).split())
     if not head:
@@ -94,7 +97,7 @@ def make_title(text, has_image=False):
 
 
 @app.route("/api/extract", methods=["POST"])
-def extract_file():
+def extract_file() -> ResponseReturnValue:
     """Reads an uploaded text file or PDF and returns its text so it can be folded into a message."""
     file = request.files.get("file")
     if not file:
@@ -103,6 +106,7 @@ def extract_file():
     filename = file.filename or "file"
     raw = file.read()
 
+    text: str
     if filename.lower().endswith(".pdf") or file.mimetype == "application/pdf":
         try:
             reader = PdfReader(io.BytesIO(raw))
@@ -124,12 +128,12 @@ def extract_file():
 
 
 @app.route("/api/chats")
-def chats_list():
+def chats_list() -> ResponseReturnValue:
     return jsonify(db.list_chats())
 
 
 @app.route("/api/chats/<chat_id>")
-def chats_get(chat_id):
+def chats_get(chat_id: str) -> ResponseReturnValue:
     chat = db.get_chat(chat_id)
     if not chat:
         return jsonify({"error": "Chat not found"}), 404
@@ -137,22 +141,22 @@ def chats_get(chat_id):
 
 
 @app.route("/api/chats/<chat_id>", methods=["DELETE"])
-def chats_delete(chat_id):
+def chats_delete(chat_id: str) -> ResponseReturnValue:
     db.delete_chat(chat_id)
     return jsonify({"ok": True})
 
 
 @app.route("/api/chat", methods=["POST"])
-def chat():
+def chat() -> ResponseReturnValue:
     """Persists the user's message, streams the reply from OpenRouter as SSE, then persists it too."""
     if not OPENROUTER_API_KEY:
         return jsonify({"error": "OPENROUTER_API_KEY is not set on the server."}), 500
 
-    body = request.get_json(force=True) or {}
+    body: dict[str, Any] = request.get_json(force=True) or {}
     user_message = body.get("message") or ""
     image = body.get("image")
     model = body.get("model") or DEFAULT_MODEL
-    chat_id = body.get("chat_id")
+    chat_id_raw = body.get("chat_id")
 
     if not isinstance(user_message, str):
         return jsonify({"error": "message must be a string"}), 400
@@ -161,9 +165,13 @@ def chat():
     if not user_message.strip() and not image:
         return jsonify({"error": "message must be non-empty, or include an image"}), 400
 
-    is_new_chat = not chat_id or not db.chat_exists(chat_id)
+    is_new_chat = not isinstance(chat_id_raw, str) or not chat_id_raw or not db.chat_exists(chat_id_raw)
+    chat_id: str
     if is_new_chat:
         chat_id = db.create_chat(title=make_title(user_message, has_image=bool(image)), model=model)
+    else:
+        assert isinstance(chat_id_raw, str)
+        chat_id = chat_id_raw
 
     # Image messages are stored as JSON ({"text", "image"}) so a follow-up
     # turn can still send the image back to the model for context; plain
@@ -174,14 +182,14 @@ def chat():
     history = db.get_history(chat_id)
     user_message_id = db.add_message(chat_id, "user", stored_content)
 
-    def to_openrouter_content(raw):
+    def to_openrouter_content(raw: str) -> str | list[dict[str, Any]]:
         if raw.startswith("{"):
             try:
                 parsed = json.loads(raw)
             except json.JSONDecodeError:
                 parsed = None
             if isinstance(parsed, dict) and parsed.get("image"):
-                parts = []
+                parts: list[dict[str, Any]] = []
                 if parsed.get("text"):
                     parts.append({"type": "text", "text": parsed["text"]})
                 parts.append({"type": "image_url", "image_url": {"url": parsed["image"]}})
@@ -197,19 +205,19 @@ def chat():
         "stream": True,
     }
 
-    def rollback_payload(error_text):
+    def rollback_payload(error_text: str) -> dict[str, Any]:
         # The exchange never produced a reply — don't let the rejected user
         # message (e.g. an image a non-vision model refused) stick around and
         # poison every later turn's replayed history. If that was the chat's
         # only message, drop the whole (now-empty) chat too.
         db.delete_message(user_message_id)
-        result = {"error": error_text, "rolled_back": True}
+        result: dict[str, Any] = {"error": error_text, "rolled_back": True}
         if is_new_chat and db.message_count(chat_id) == 0:
             db.delete_chat(chat_id)
             result["chat_deleted"] = True
         return result
 
-    def generate():
+    def generate() -> Iterator[str]:
         # Sent first so the frontend can learn the chat_id for a brand-new chat.
         yield f"data: {json.dumps({'chat_id': chat_id, 'is_new_chat': is_new_chat})}\n\n"
 

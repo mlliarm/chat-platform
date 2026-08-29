@@ -35,6 +35,15 @@ isolated temp file per test (see `tests/conftest.py`), and all OpenRouter
 network calls are mocked, so no API key or network access is needed to run
 the suite.
 
+## Type checking
+
+`app.py`, `db.py`, and the test suite are fully type-annotated.
+
+```bash
+pip install -r requirements-dev.txt
+mypy
+```
+
 ## How it works
 
 - `app.py` — Flask server. `/api/models` proxies OpenRouter's model catalog to
