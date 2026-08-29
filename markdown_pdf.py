@@ -50,9 +50,10 @@ STYLES: dict[str, ParagraphStyle] = {
     "h2": ParagraphStyle("md-h2", parent=_NORMAL, fontName=FONT_BOLD, fontSize=15, leading=19, spaceBefore=10, spaceAfter=6),
     "h3": ParagraphStyle("md-h3", parent=_NORMAL, fontName=FONT_BOLD, fontSize=13, leading=17, spaceBefore=8, spaceAfter=6),
     "h4": ParagraphStyle("md-h4", parent=_NORMAL, fontName=FONT_BOLD, fontSize=11.5, leading=15, spaceBefore=8, spaceAfter=4),
-    "code": ParagraphStyle(
-        "md-code", parent=_NORMAL, fontName=FONT_MONO, fontSize=8.5, leading=11, backColor=_CODE_BG, borderPadding=6, spaceAfter=8
-    ),
+    # backColor/borderPadding aren't set here: reportlab's Preformatted flowable
+    # (unlike Paragraph) ignores them when drawing, so the shaded "bubble" behind
+    # a code block is instead drawn by wrapping it in a Table — see _code_bubble().
+    "code": ParagraphStyle("md-code", parent=_NORMAL, fontName=FONT_MONO, fontSize=8.5, leading=11),
     "quote": ParagraphStyle("md-quote", parent=_NORMAL, fontName=FONT_REGULAR, textColor=_MUTED, leftIndent=12, spaceAfter=8, leading=15),
     "table_cell": ParagraphStyle("md-table-cell", parent=_NORMAL, fontName=FONT_REGULAR, fontSize=9, leading=12),
     "table_header_cell": ParagraphStyle("md-table-header-cell", parent=_NORMAL, fontName=FONT_BOLD, fontSize=9, leading=12),
@@ -140,7 +141,7 @@ def _render_block(el: ET.Element, body_style: ParagraphStyle | None = None) -> l
     if tag == "pre":
         code_el = el.find("code")
         code_text = "".join((code_el if code_el is not None else el).itertext())
-        return [Preformatted(code_text.rstrip("\n"), STYLES["code"])]
+        return [_code_bubble(code_text.rstrip("\n"))]
 
     if tag == "blockquote":
         flowables: list[Flowable] = []
@@ -157,6 +158,26 @@ def _render_block(el: ET.Element, body_style: ParagraphStyle | None = None) -> l
     # Unrecognized block element — flatten its inline content into a paragraph.
     markup = _inline_markup(el)
     return [Paragraph(markup, style)] if markup.strip() else []
+
+
+def _code_bubble(code_text: str) -> Table:
+    """Wraps a fenced code block in a shaded, rounded box (a Table, since
+    Preformatted itself can't draw a background) — matching the code block
+    "bubble" the browser shows via marked.js."""
+    pre = Preformatted(code_text, STYLES["code"])
+    table = Table([[pre]], hAlign="LEFT", spaceBefore=2, spaceAfter=8)
+    style_cmds: list[tuple[object, ...]] = [
+        ("BACKGROUND", (0, 0), (-1, -1), _CODE_BG),
+        ("BOX", (0, 0), (-1, -1), 0.75, _BORDER),
+        ("ROUNDEDCORNERS", [6, 6, 6, 6]),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]
+    # See the matching note on _render_table's TableStyle call below.
+    table.setStyle(TableStyle(style_cmds))  # type: ignore[arg-type]
+    return table
 
 
 def _render_list(el: ET.Element) -> ListFlowable:

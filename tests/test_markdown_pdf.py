@@ -54,12 +54,18 @@ def test_unordered_list_becomes_list_flowable() -> None:
     assert isinstance(flowables[0], ListFlowable)
 
 
-def test_fenced_code_block_becomes_preformatted_and_keeps_raw_text() -> None:
+def test_fenced_code_block_becomes_a_shaded_bubble_and_keeps_raw_text() -> None:
     flowables = markdown_flowables("```python\nprint('hi')\n```")
     assert len(flowables) == 1
-    assert isinstance(flowables[0], Preformatted)
-    # Preformatted must not have markdown/HTML-escaped the code content.
-    assert flowables[0].lines == ["print('hi')"]
+    bubble = flowables[0]
+    # A bare Preformatted flowable silently ignores backColor/border styling
+    # (reportlab quirk), so code blocks are wrapped in a shaded Table "bubble"
+    # instead — matching the browser's code block appearance.
+    assert isinstance(bubble, Table)
+    pre = bubble._cellvalues[0][0]  # type: ignore[attr-defined]
+    assert isinstance(pre, Preformatted)
+    # The code content itself must not be markdown/HTML-escaped.
+    assert pre.lines == ["print('hi')"]
 
 
 def test_table_becomes_table_flowable() -> None:
@@ -81,7 +87,7 @@ def test_mixed_document_produces_expected_flowable_sequence() -> None:
     text = "# Title\n\nSome **bold** text.\n\n- one\n- two\n\n```\ncode here\n```\n"
     flowables = markdown_flowables(text)
     kinds = [type(f).__name__ for f in flowables]
-    assert kinds == ["Paragraph", "Paragraph", "ListFlowable", "Preformatted"]
+    assert kinds == ["Paragraph", "Paragraph", "ListFlowable", "Table"]
 
 
 def test_matched_think_block_is_stripped() -> None:
