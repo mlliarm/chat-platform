@@ -9,6 +9,7 @@ const freeOnlyToggle = document.getElementById("free-only-toggle");
 const attachBtn = document.getElementById("attach-btn");
 const fileInput = document.getElementById("file-input");
 const attachmentPreviewEl = document.getElementById("attachment-preview");
+const exportPdfBtn = document.getElementById("export-pdf-btn");
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -20,6 +21,11 @@ const EMPTY_STATE_HTML = `
     <p>Pick a model on the left and start typing below.</p>
   </div>
 `;
+
+function setCurrentChatId(id) {
+  currentChatId = id;
+  exportPdfBtn.disabled = !currentChatId;
+}
 
 let currentChatId = null;
 let chats = []; // {id, title, model, updated_at}
@@ -264,6 +270,11 @@ function clearAttachmentPreview() {
   attachmentPreviewEl.innerHTML = "";
 }
 
+exportPdfBtn.addEventListener("click", () => {
+  if (!currentChatId) return;
+  window.location.href = `/api/chats/${currentChatId}/export`;
+});
+
 attachBtn.addEventListener("click", () => fileInput.click());
 
 fileInput.addEventListener("change", async () => {
@@ -438,7 +449,7 @@ async function openChat(chatId) {
     if (!res.ok) return;
     const chat = await res.json();
 
-    currentChatId = chat.id;
+    setCurrentChatId(chat.id);
     chatHasImage = chat.messages.some((m) => tryParseImageContent(m.content));
     messagesEl.innerHTML = "";
     for (const m of chat.messages) {
@@ -459,7 +470,7 @@ async function deleteChat(chatId) {
     await fetch(`/api/chats/${chatId}`, { method: "DELETE" });
     chats = chats.filter((c) => c.id !== chatId);
     if (chatId === currentChatId) {
-      currentChatId = null;
+      setCurrentChatId(null);
       chatHasImage = false;
       messagesEl.innerHTML = EMPTY_STATE_HTML;
     }
@@ -470,7 +481,7 @@ async function deleteChat(chatId) {
 }
 
 function startNewChat() {
-  currentChatId = null;
+  setCurrentChatId(null);
   chatHasImage = false;
   messagesEl.innerHTML = EMPTY_STATE_HTML;
   renderChatList();
@@ -544,7 +555,7 @@ async function sendMessage(text) {
 
         if (parsed.chat_id) {
           const wasNew = currentChatId === null;
-          currentChatId = parsed.chat_id;
+          setCurrentChatId(parsed.chat_id);
           if (parsed.is_new_chat) {
             const fallbackTitle = attachment?.kind === "image" ? "📷 Image" : attachment ? `📎 ${attachment.name}` : "New chat";
             chats.unshift({
@@ -567,7 +578,7 @@ async function sendMessage(text) {
           }
           if (parsed.chat_deleted) {
             chats = chats.filter((c) => c.id !== currentChatId);
-            currentChatId = null;
+            setCurrentChatId(null);
             chatHasImage = false;
             chatWasDeleted = true;
           }

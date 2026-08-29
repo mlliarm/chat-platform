@@ -51,7 +51,9 @@ mypy
   message, loads prior history from SQLite, forwards the full conversation to
   OpenRouter with `stream: true`, relays the SSE stream to the browser, and
   persists both the user message and the finished assistant reply once
-  streaming ends. `/api/chats` (list/get/delete) backs the sidebar.
+  streaming ends. `/api/chats` (list/get/delete/pin) backs the sidebar.
+  `/api/chats/<id>/export` renders the full conversation to a PDF (via
+  `reportlab`) for download.
 - `db.py` — tiny SQLite layer (`chat.db`, created automatically) storing
   `chats` and `messages`. A chat's title is auto-derived from its first
   message.

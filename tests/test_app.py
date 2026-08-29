@@ -8,6 +8,7 @@ file (see the `client`/`temp_db` fixtures in conftest.py); the real chat.db
 is never touched.
 """
 
+import io
 import json
 from collections.abc import Iterator
 from types import ModuleType
@@ -260,6 +261,88 @@ def test_pin_defaults_to_true_when_no_body_sent(client: FlaskClient, temp_db: Mo
 def test_pin_nonexistent_chat_returns_404(client: FlaskClient) -> None:
     resp = client.post("/api/chats/does-not-exist/pin", json={"pinned": True})
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# GET /api/chats/<id>/export
+# ---------------------------------------------------------------------------
+
+# A valid 1x1 transparent PNG, as a data: URL, for exercising image messages.
+ONE_PX_PNG = (
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAA"
+    "C0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+)
+
+
+def _pdf_text(data: bytes) -> str:
+    from pypdf import PdfReader
+
+    reader = PdfReader(io.BytesIO(data))
+    return "\n".join(page.extract_text() or "" for page in reader.pages)
+
+
+def test_export_missing_chat_returns_404(client: FlaskClient) -> None:
+    resp = client.get("/api/chats/does-not-exist/export")
+    assert resp.status_code == 404
+
+
+def test_export_returns_pdf_with_attachment_headers(client: FlaskClient, temp_db: ModuleType) -> None:
+    chat_id = temp_db.create_chat(title="Weekend trip?", model="openai/gpt-4o-mini")
+    temp_db.add_message(chat_id, "user", "hello")
+
+    resp = client.get(f"/api/chats/{chat_id}/export")
+    assert resp.status_code == 200
+    assert resp.mimetype == "application/pdf"
+    assert "attachment" in resp.headers["Content-Disposition"]
+    assert "Weekend_trip.pdf" in resp.headers["Content-Disposition"]
+    assert resp.data[:5] == b"%PDF-"
+
+
+def test_export_includes_title_and_plain_messages(client: FlaskClient, temp_db: ModuleType) -> None:
+    chat_id = temp_db.create_chat(title="Recipe ideas", model="openai/gpt-4o-mini")
+    temp_db.add_message(chat_id, "user", "What can I cook with eggplant?")
+    temp_db.add_message(chat_id, "assistant", "Try a baba ganoush.")
+
+    resp = client.get(f"/api/chats/{chat_id}/export")
+    text = _pdf_text(resp.data)
+    assert "Recipe ideas" in text
+    assert "What can I cook with eggplant?" in text
+    assert "Try a baba ganoush." in text
+    assert "You" in text
+    assert "Assistant" in text
+
+
+def test_export_includes_text_attachment_marker(client: FlaskClient, temp_db: ModuleType) -> None:
+    chat_id = temp_db.create_chat(title="Notes", model="m")
+    temp_db.add_message(
+        chat_id,
+        "user",
+        "Summarize this\n\n<!--attachment:notes.txt-->\nsome extracted file text\n<!--/attachment-->",
+    )
+
+    resp = client.get(f"/api/chats/{chat_id}/export")
+    text = _pdf_text(resp.data)
+    assert "Summarize this" in text
+    assert "notes.txt" in text
+
+
+def test_export_includes_image_message_without_erroring(client: FlaskClient, temp_db: ModuleType) -> None:
+    chat_id = temp_db.create_chat(title="Photo", model="m")
+    temp_db.add_message(chat_id, "user", json.dumps({"text": "check this out", "image": ONE_PX_PNG}))
+
+    resp = client.get(f"/api/chats/{chat_id}/export")
+    assert resp.status_code == 200
+    assert resp.data[:5] == b"%PDF-"
+    text = _pdf_text(resp.data)
+    assert "check this out" in text
+
+
+def test_export_filename_strips_unsafe_characters(client: FlaskClient, temp_db: ModuleType) -> None:
+    chat_id = temp_db.create_chat(title='Weird "title"/with:chars?', model="m")
+    resp = client.get(f"/api/chats/{chat_id}/export")
+    disposition = resp.headers["Content-Disposition"]
+    assert '"' not in disposition.split("filename=")[1][1:-1]
+    assert "/" not in disposition
 
 
 # ---------------------------------------------------------------------------

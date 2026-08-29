@@ -1,15 +1,24 @@
+import base64
 import io
 import json
 import os
 import re
 from collections.abc import Iterator
+from datetime import datetime
 from typing import Any
+from xml.sax.saxutils import escape as xml_escape
 
 import requests
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, render_template, request, stream_with_context
 from flask.typing import ResponseReturnValue
 from pypdf import PdfReader
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import LETTER
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.lib.utils import ImageReader
+from reportlab.platypus import Flowable, Image as RLImage, Paragraph, SimpleDocTemplate
 
 import db
 
@@ -96,6 +105,41 @@ def make_title(text: str, has_image: bool = False) -> str:
     return head[:50] + ("…" if len(head) > 50 else "")
 
 
+def _parse_message_for_export(raw: str) -> tuple[str, str | None, str | None]:
+    """Splits a stored message into (display_text, image_data_url, attachment_filename)."""
+    if raw.startswith("{"):
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, dict) and parsed.get("image"):
+            text = parsed.get("text")
+            return (text if isinstance(text, str) else ""), parsed["image"], None
+
+    marker = ATTACHMENT_MARKER_RE.search(raw)
+    if marker:
+        return raw[: marker.start()], None, marker.group(1)
+    return raw, None, None
+
+
+def _format_export_timestamp(iso: str) -> str:
+    try:
+        return datetime.fromisoformat(iso).strftime("%b %d, %Y, %I:%M %p")
+    except ValueError:
+        return iso
+
+
+def _image_flowable(data_url: str, max_width: float = 4.5 * inch) -> Flowable | None:
+    try:
+        _, b64data = data_url.split(",", 1)
+        img_bytes = base64.b64decode(b64data)
+        iw, ih = ImageReader(io.BytesIO(img_bytes)).getSize()
+        scale = min(1.0, max_width / iw) if iw else 1.0
+        return RLImage(io.BytesIO(img_bytes), width=iw * scale, height=ih * scale)
+    except Exception:
+        return None
+
+
 @app.route("/api/extract", methods=["POST"])
 def extract_file() -> ResponseReturnValue:
     """Reads an uploaded text file or PDF and returns its text so it can be folded into a message."""
@@ -154,6 +198,50 @@ def chats_pin(chat_id: str) -> ResponseReturnValue:
     pinned = bool(body.get("pinned", True))
     db.set_pinned(chat_id, pinned)
     return jsonify({"ok": True, "pinned": pinned})
+
+
+@app.route("/api/chats/<chat_id>/export")
+def chats_export_pdf(chat_id: str) -> ResponseReturnValue:
+    chat = db.get_chat(chat_id)
+    if not chat:
+        return jsonify({"error": "Chat not found"}), 404
+
+    styles = getSampleStyleSheet()
+    meta_style = ParagraphStyle("meta", parent=styles["Normal"], textColor=colors.HexColor("#666666"), spaceAfter=16)
+    role_style = ParagraphStyle("role", parent=styles["Normal"], fontName="Helvetica-Bold", spaceBefore=16, spaceAfter=4)
+    body_style = ParagraphStyle("body", parent=styles["Normal"], spaceAfter=6, leading=15)
+    attachment_style = ParagraphStyle("attachment", parent=body_style, textColor=colors.HexColor("#666666"))
+
+    story: list[Flowable] = [
+        Paragraph(xml_escape(chat["title"]), styles["Title"]),
+        Paragraph(f"Model: {xml_escape(chat['model'] or '—')}", meta_style),
+    ]
+
+    for m in chat["messages"]:
+        role_label = "You" if m["role"] == "user" else "Assistant"
+        timestamp = _format_export_timestamp(m["created_at"])
+        story.append(Paragraph(f"{role_label} — {xml_escape(timestamp)}", role_style))
+
+        text, image_url, attachment_name = _parse_message_for_export(m["content"])
+        if text.strip():
+            story.append(Paragraph(xml_escape(text).replace("\n", "<br/>"), body_style))
+        if attachment_name:
+            story.append(Paragraph(f"📎 {xml_escape(attachment_name)}", attachment_style))
+        if image_url:
+            image = _image_flowable(image_url)
+            if image:
+                story.append(image)
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=LETTER, topMargin=0.75 * inch, bottomMargin=0.75 * inch)
+    doc.build(story)
+
+    filename = re.sub(r"[^\w\-]+", "_", chat["title"]).strip("_") or "chat"
+    return Response(
+        buffer.getvalue(),
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}.pdf"'},
+    )
 
 
 @app.route("/api/chat", methods=["POST"])
