@@ -7,6 +7,10 @@ const TEST_DB_PATH = path.join(os.tmpdir(), `chat-platform-e2e-${Date.now()}.db`
 // collides with (or needs to touch) a real dev server someone has running.
 const TEST_PORT = 5799;
 
+// Local runs use the repo's venv; CI (which installs into the job's own
+// environment) overrides this with FLASK_BIN=flask.
+const FLASK_BIN = process.env.FLASK_BIN || "venv/bin/flask";
+
 export default defineConfig({
   testDir: "./tests/frontend/e2e",
   fullyParallel: true,
@@ -22,11 +26,11 @@ export default defineConfig({
     },
   ],
   webServer: {
-    // Uses `flask run` (not `python app.py`) so debug/reload stays off
-    // regardless of the hardcoded `app.run(debug=True)` in app.py's
-    // `__main__` block, and points the app at a throwaway SQLite file so
-    // the real chat.db is never touched.
-    command: `venv/bin/flask --app app run --no-debug -p ${TEST_PORT}`,
+    // Uses `flask run` (not `python app.py`) so the debugger and reloader stay
+    // off explicitly rather than by inheriting whatever FLASK_DEBUG happens to
+    // be set to, and points the app at a throwaway SQLite file so the real
+    // chat.db is never touched.
+    command: `${FLASK_BIN} --app app run --no-debug -p ${TEST_PORT}`,
     url: `http://127.0.0.1:${TEST_PORT}`,
     reuseExistingServer: false,
     env: {

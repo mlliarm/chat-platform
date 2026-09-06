@@ -3,21 +3,52 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- "ChAT" is intentional — it spells CAT, matching the 🐱 header mascot. -->
   <title>Local LLM ChAT</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <!--
+    Every CDN asset below carries a Subresource Integrity hash, so a tampered
+    or swapped file on the CDN is refused by the browser rather than executed.
+    DOMPurify in particular is what sanitizes assistant Markdown before it is
+    written as HTML, so silently substituting it would defeat that defense.
+    Hashes are cdnjs's own published sha512 values; when bumping a version,
+    fetch the new one from https://api.cdnjs.com/libraries/<lib>/<ver>?fields=sri
+    rather than dropping the attribute.
+  -->
   <link
     rel="stylesheet"
     href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2/styles/github.min.css"
+    integrity="sha512-0aPQyyeZrWj9sCA46UlmWgKOP0mUipLQ6OZXu8l4IcAmD2u31EPEy9VcIMvl7SoAaKe8bLXZhYoMaE/in+gcgA=="
+    crossorigin="anonymous"
+    referrerpolicy="no-referrer"
     media="(prefers-color-scheme: light)"
   />
   <link
     rel="stylesheet"
     href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2/styles/github-dark.min.css"
+    integrity="sha512-rO+olRTkcf304DQBxSWxln8JXCzTHlKnIdnMUwYvQa9/Jd4cQaNkItIUj6Z4nvW1dqK0SKXLbn9h4KwZTNtAyw=="
+    crossorigin="anonymous"
+    referrerpolicy="no-referrer"
     media="(prefers-color-scheme: dark)"
   />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/18.0.10/lib/marked.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.4.14/purify.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2/highlight.min.js"></script>
+  <script
+    src="https://cdnjs.cloudflare.com/ajax/libs/marked/18.0.10/lib/marked.umd.min.js"
+    integrity="sha512-BXBF2VjQU8N1VwZXChMTvB49voK+BRHl8NnXMXbda1RQ5nguKxDl8406wy6opMqBoGuPIDm2mD+Db37I3CuM8A=="
+    crossorigin="anonymous"
+    referrerpolicy="no-referrer"
+  ></script>
+  <script
+    src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.4.14/purify.min.js"
+    integrity="sha512-+G1tsz5n01KTeX7oUT/Lm5P2B+n9RUogC98t4E8MseH9YUac2D2uPaNSbsYDOOSZr2YQ1BfeCxk8KXZXvhctEA=="
+    crossorigin="anonymous"
+    referrerpolicy="no-referrer"
+  ></script>
+  <script
+    src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2/highlight.min.js"
+    integrity="sha512-VSPLUv/n1Bmn+4zoxBNwpuFAO3//79I0Aax/qHDx24R47vylPcc9PrHDCqlePwHnh3joiM7/YTQhcXyQAAxvPQ=="
+    crossorigin="anonymous"
+    referrerpolicy="no-referrer"
+  ></script>
   <script>
     // Only the LaTeX-native delimiters are configured: script.js re-emits every
     // math span it finds with these, so MathJax never has to guess at stray
@@ -38,7 +69,17 @@
       },
     };
   </script>
-  <script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.js"></script>
+  <!--
+    SRI covers this entry bundle only; MathJax pulls its own font data from the
+    same CDN path at runtime, which integrity attributes cannot reach.
+  -->
+  <script
+    async
+    src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.js"
+    integrity="sha512-tiaNmAzpy3KcgtuiLwT9WSlSsqGqtDB5ylMwxoqG5ysNIyzkBw24k6UFTuXGgyXJLJ8aM/ho1h67NRKedPx++Q=="
+    crossorigin="anonymous"
+    referrerpolicy="no-referrer"
+  ></script>
 </head>
 <body>
   <div class="app">

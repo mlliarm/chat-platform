@@ -349,3 +349,34 @@ Closes #4.
   (asserting both rows survive, which is the regression a markdown-mangled
   `\\` would cause), math left literal in a code block, and currency in
   prose left untypeset.
+
+## (pending) — 2026-09-06 — hardening pass ahead of making the repo public
+
+### Security
+- The Werkzeug debugger no longer runs by default. `app.py`'s `__main__` block
+  hardcoded `debug=True`, which serves an interactive Python console on any
+  traceback — remote code execution for anyone who could reach the port. It is
+  now opt-in via `FLASK_DEBUG`, and the bind address defaults to `127.0.0.1`
+  (overridable with `HOST`/`PORT`) since the app has no auth or rate limiting
+  and the OpenRouter key is held server-side.
+- All six CDN assets in `templates/index.html` (marked, DOMPurify, highlight.js
+  + its two themes, MathJax) now carry Subresource Integrity hashes plus
+  `crossorigin`/`referrerpolicy`. DOMPurify is what sanitizes assistant Markdown
+  before it becomes HTML, so a swapped file on the CDN would otherwise have
+  silently removed that defense. Hashes are cdnjs's published sha512 values,
+  verified byte-for-byte against the served files.
+
+### Added
+- `.github/workflows/ci.yml`: pytest + mypy on one job, Vitest + Playwright on
+  another, both on push and PR. Needs no secrets — the backend suite mocks
+  OpenRouter and the e2e suite intercepts it in the browser.
+- README: a Security section describing the trust model and the existing
+  defenses (key redaction, parameterized SQL, DOMPurify, upload caps), a
+  License section naming GPL-3.0 and its copyleft obligation, an environment
+  variable table, and a CI badge.
+- `.env.example`: documented the optional `FLASK_DEBUG`, `HOST`, and `PORT`
+  variables, commented out.
+
+### Changed
+- `playwright.config.js` reads `FLASK_BIN` (default `venv/bin/flask`), so CI
+  can point the e2e web server at its own environment instead of the repo venv.

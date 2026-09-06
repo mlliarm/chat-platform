@@ -1,8 +1,15 @@
 # Local OpenRouter Chat
 
+[![CI](https://github.com/mlliarm/chat-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/mlliarm/chat-platform/actions/workflows/ci.yml)
+
 A minimal local chat app (Flask backend + vanilla JS frontend) that sends prompts
 to any model available on [OpenRouter](https://openrouter.ai) and streams the
 response back in a ChatGPT/Claude-style UI.
+
+> Built to run on your own machine. It has no authentication and no rate
+> limiting, and the OpenRouter API key lives server-side — so anyone who can
+> reach the port can spend your credits. See [Security](#security) before
+> exposing it to anything wider than localhost.
 
 ## Setup
 
@@ -22,6 +29,15 @@ python app.py
 ```
 
 Then open http://localhost:5000
+
+Optional environment variables, all with safe defaults:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `DEFAULT_MODEL` | `openai/gpt-4o-mini` | Model preselected in the picker; any OpenRouter model id works. |
+| `HOST` / `PORT` | `127.0.0.1` / `5000` | Bind address. Only widen `HOST` behind something that authenticates. |
+| `FLASK_DEBUG` | off | Auto-reload plus the Werkzeug debugger. Local development only — see [Security](#security). |
+| `APP_URL` / `APP_NAME` | localhost / app name | Sent to OpenRouter as attribution headers; cosmetic. |
 
 ## Running tests
 
@@ -140,5 +156,29 @@ flowchart TD
   amounts (`$5`) are not mistaken for math.
 - Swap `DEFAULT_MODEL` in `.env` to any OpenRouter model id (e.g.
   `anthropic/claude-sonnet-4.5`, `openai/gpt-4o`, `google/gemini-2.0-flash-001`).
-- This is boilerplate: no auth, no rate limiting. Add those before deploying
-  anywhere beyond your own machine.
+
+## Security
+
+This is a single-user local tool, not a deployable service. Before putting it
+anywhere other people can reach, you would need to add authentication and rate
+limiting — neither exists here.
+
+What the code does do:
+
+- **The API key never reaches the browser.** Upstream errors are scrubbed of
+  key-shaped strings before being relayed to the client, and a 402 is replaced
+  with a generic credits message rather than passed through.
+- **`.env` and `chat.db` are gitignored** and have never been committed.
+- **Assistant Markdown is sanitized** with DOMPurify before it is inserted as
+  HTML, and all CDN assets are pinned with Subresource Integrity hashes so a
+  tampered file — DOMPurify itself included — is refused by the browser.
+- **SQL is fully parameterized**, and uploads are capped at 15 MB with
+  extracted attachment text truncated at 30k characters.
+- **The debugger is off by default.** `FLASK_DEBUG=1` enables an interactive
+  Python console on any traceback; never set it on a host anything else can
+  reach. The server binds to `127.0.0.1` by default for the same reason.
+
+## License
+
+[GPL-3.0](LICENSE). You are free to use, modify, and distribute this, but
+distributed derivative works must also be released under the GPL-3.0.
