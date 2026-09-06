@@ -88,7 +88,7 @@ with SQLite for persistence.
 flowchart TD
     subgraph Browser
         HTML["index.html + style.css<br/>(layout, theme)"]
-        JS["script.js<br/>(SSE client, marked + highlight.js,<br/>sidebar/attachments state)"]
+        JS["script.js<br/>(SSE client, marked + highlight.js + MathJax,<br/>sidebar/attachments state)"]
     end
 
     subgraph Server[app.py]
@@ -129,11 +129,15 @@ flowchart TD
 | `app.py` | Flask routes: streamed chat completions (`/api/chat`), model catalog (`/api/models`), file/PDF text extraction (`/api/extract`), chat list/get/delete/pin (`/api/chats...`), PDF export (`/api/chats/<id>/export`). |
 | `db.py` | SQLite persistence layer (`chat.db`, created automatically) — `chats` and `messages` tables, auto-migrated schema, chat titles derived from the first message. |
 | `markdown_pdf.py` | Renders an assistant reply's Markdown into `reportlab` PDF content: headings, lists, tables, blockquotes, and Pygments-syntax-highlighted code blocks. Uses bundled DejaVu Sans/Mono fonts (`fonts/`) instead of the PDF standard fonts, since those only cover Latin-1 and would show Greek, Cyrillic, APL symbols, etc. as blank boxes. Strips any `<think>...</think>` reasoning-model artifact (including a stray, unmatched closing tag) before rendering. |
-| `static/script.js` | Reads the SSE stream chunk by chunk and renders tokens live; renders Markdown via `marked` with a `highlight.js` code-block renderer so code is syntax-highlighted the same way as in exported PDFs; manages the sidebar's chat list and attachment state. |
+| `static/script.js` | Reads the SSE stream chunk by chunk and renders tokens live; renders Markdown via `marked` with a `highlight.js` code-block renderer so code is syntax-highlighted the same way as in exported PDFs; claims LaTeX spans as their own `marked` token and typesets them with MathJax; manages the sidebar's chat list and attachment state. |
 | `templates/index.html` + `static/style.css` | Sidebar with past chats (click to reopen, ✕ to delete, ⭐ to pin), model selector, "New chat", centered message list and composer — styled after Claude/ChatGPT, with a light/dark theme. |
 
 ## Notes
 
+- Assistant replies render LaTeX with MathJax. Inline math is written as
+  `$…$` or `\(…\)`, display math as `$$…$$` or `\[…\]`. Math inside code
+  spans and fenced code blocks is left as literal source, and bare currency
+  amounts (`$5`) are not mistaken for math.
 - Swap `DEFAULT_MODEL` in `.env` to any OpenRouter model id (e.g.
   `anthropic/claude-sonnet-4.5`, `openai/gpt-4o`, `google/gemini-2.0-flash-001`).
 - This is boilerplate: no auth, no rate limiting. Add those before deploying

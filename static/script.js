@@ -33,6 +33,78 @@ let currentChatId = null;
 let chats = []; // {id, title, model, updated_at}
 let chatHasImage = false; // whether the currently open chat has an image anywhere in its history
 
+// Math has to be pulled out of the source before marked touches it: markdown
+// eats backslash escapes (`\[`, `\\` row breaks) and turns `_`/`*` inside an
+// expression into emphasis, either of which corrupts the LaTeX. Claiming the
+// span as its own token leaves the body untouched, and re-emitting it with
+// MathJax's own delimiters is what lets MathJax find it afterwards.
+const MATH_SPAN_RE =
+  /^(?:\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$(?![\s$])((?:\\[\s\S]|[^\\$])+?)(?<![\s\\])\$(?!\d))/;
+const MATH_SPAN_START_RE = /\$|\\\(|\\\[/;
+
+function escapeHtml(text) {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function mathTokenizer() {
+  return {
+    name: "math",
+    level: "inline",
+    start(src) {
+      const match = src.match(MATH_SPAN_START_RE);
+      return match ? match.index : undefined;
+    },
+    tokenizer(src) {
+      const match = MATH_SPAN_RE.exec(src);
+      if (!match) return undefined;
+      const [raw, displayDollar, displayBracket, inlineParen, inlineDollar] = match;
+      const display = displayDollar ?? displayBracket;
+      return {
+        type: "math",
+        raw,
+        display: display !== undefined,
+        text: display ?? inlineParen ?? inlineDollar,
+      };
+    },
+    renderer(token) {
+      const body = escapeHtml(token.text);
+      return token.display
+        ? `<span class="math-display">\\[${body}\\]</span>`
+        : `<span class="math-inline">\\(${body}\\)</span>`;
+    },
+  };
+}
+
+const MATH_TYPESET_DELAY_MS = 60;
+const mathQueue = new Set();
+let mathTimer = null;
+let mathJaxReady = Boolean(window.mathJaxPageReady);
+
+// Streaming replaces the whole message body on every token, so typesetting is
+// batched: without this a long reply containing math re-runs MathJax hundreds
+// of times and the queue keeps growing after the stream is done.
+function scheduleMathTypeset(el) {
+  if (!el.querySelector(".math-inline, .math-display")) return;
+  mathQueue.add(el);
+  if (mathTimer === null) mathTimer = setTimeout(flushMathQueue, MATH_TYPESET_DELAY_MS);
+}
+
+function flushMathQueue() {
+  mathTimer = null;
+  if (!mathJaxReady) return; // queue is kept; the mathjax-ready handler flushes it
+  const targets = [...mathQueue].filter((el) => el.isConnected);
+  mathQueue.clear();
+  if (targets.length === 0) return;
+  MathJax.typesetPromise(targets).catch((err) => {
+    console.warn("MathJax could not typeset an equation.", err);
+  });
+}
+
+document.addEventListener("mathjax-ready", () => {
+  mathJaxReady = true;
+  flushMathQueue();
+});
+
 const markdownReady = typeof marked !== "undefined" && typeof DOMPurify !== "undefined";
 if (markdownReady) {
   marked.setOptions({ breaks: true, gfm: true });
@@ -60,6 +132,8 @@ if (markdownReady) {
   } else {
     console.warn("highlight.js failed to load from CDN; code blocks will render without syntax highlighting.");
   }
+
+  marked.use({ extensions: [mathTokenizer()] });
 } else {
   console.warn("marked/DOMPurify failed to load from CDN; assistant replies will render as plain text.");
 }
@@ -126,6 +200,7 @@ function setMessageContent(el, role, content) {
   if (role === "assistant" && markdownReady) {
     el.classList.add("markdown-body");
     el.innerHTML = DOMPurify.sanitize(marked.parse(content));
+    scheduleMathTypeset(el);
     return;
   }
 

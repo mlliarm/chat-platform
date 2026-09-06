@@ -18,6 +18,27 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/18.0.10/lib/marked.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.4.14/purify.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2/highlight.min.js"></script>
+  <script>
+    // Only the LaTeX-native delimiters are configured: script.js re-emits every
+    // math span it finds with these, so MathJax never has to guess at stray
+    // dollar signs in ordinary prose.
+    window.MathJax = {
+      tex: {
+        inlineMath: [["\\(", "\\)"]],
+        displayMath: [["\\[", "\\]"]],
+      },
+      options: { enableMenu: false },
+      startup: {
+        typeset: false,
+        pageReady: () =>
+          MathJax.startup.defaultPageReady().then(() => {
+            window.mathJaxPageReady = true;
+            document.dispatchEvent(new Event("mathjax-ready"));
+          }),
+      },
+    };
+  </script>
+  <script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.js"></script>
 </head>
 <body>
   <div class="app">

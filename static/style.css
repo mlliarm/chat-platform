@@ -481,6 +481,30 @@ body {
   padding: 0;
 }
 
+/* Display math is a <span> so it stays valid inside the <p> marked wraps a
+   paragraph in; the block behavior comes from CSS instead of the tag. */
+.markdown-body .math-display {
+  display: block;
+  margin: 12px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.markdown-body .math-inline {
+  overflow-wrap: normal;
+}
+
+/* Until MathJax has typeset it, a span still shows its raw \( … \) source;
+   monospace keeps that readable rather than looking like broken prose. */
+.markdown-body .math-display,
+.markdown-body .math-inline {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.markdown-body mjx-container {
+  font-family: initial;
+}
+
 .markdown-body blockquote {
   border-left: 3px solid var(--border);
   padding: 2px 0 2px 14px;
