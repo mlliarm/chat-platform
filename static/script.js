@@ -11,6 +11,8 @@ const fileInput = document.getElementById("file-input");
 const attachmentPreviewEl = document.getElementById("attachment-preview");
 const exportPdfBtn = document.getElementById("export-pdf-btn");
 
+const DEFAULT_MODEL = modelSelect.dataset.defaultModel;
+
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const ATTACHMENT_MARKER_RE = /\n\n<!--attachment:(.+?)-->\n([\s\S]*?)\n<!--\/attachment-->$/;
@@ -503,6 +505,9 @@ function startNewChat() {
   setCurrentChatId(null);
   chatHasImage = false;
   messagesEl.innerHTML = EMPTY_STATE_HTML;
+  if ([...modelSelect.options].some((o) => o.value === DEFAULT_MODEL)) {
+    modelSelect.value = DEFAULT_MODEL;
+  }
   renderChatList();
 }
 
