@@ -295,6 +295,22 @@ def test_math_delimiters_inside_code_are_left_untouched() -> None:
     assert strip_font_tags(pre.text) == "$also not math$"
 
 
+def test_display_latex_with_delimiter_and_body_on_separate_lines_still_renders() -> None:
+    # LLM output commonly puts the `\[`/`\]` delimiter on its own line, with
+    # the equation body (and its surrounding indentation) on the next, e.g.:
+    #   \[
+    #      \sqrt{2} = \frac{p}{q}
+    #   \]
+    # matplotlib's mathtext rejects embedded newlines, so this must be
+    # normalized to a single line before being handed to it.
+    flowables = markdown_flowables("Given:\n\n\\[\n   \\sqrt{2} = \\frac{p}{q}\n   \\]\n\nQ.E.D.")
+    equation = flowables[1]
+    assert isinstance(equation, Paragraph)
+    assert equation.style.name == "md-math-display"
+    assert "<img" in equation.text
+    assert "sqrt" not in equation.text
+
+
 def test_latex_unsupported_by_the_renderer_falls_back_to_raw_source() -> None:
     # matplotlib's mathtext (used to rasterize LaTeX with no system LaTeX
     # install required) doesn't understand `aligned`/`align` environments —

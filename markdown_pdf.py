@@ -237,7 +237,12 @@ def _math_img_tag(latex: str, display: bool, tmp_dir: str, math_index: int) -> s
 
     fontsize = _DISPLAY_MATH_FONT_SIZE if display else _INLINE_MATH_FONT_SIZE
     prop = FontProperties(size=fontsize)
-    wrapped = f"${latex}$"
+    # mathtext's grammar rejects embedded newlines/indentation — LaTeX math
+    # mode treats whitespace as insignificant, so collapsing it is safe. This
+    # matters because display math is often written with the delimiter and
+    # body on separate lines, e.g. "\[\n   \sqrt{2} = \frac{p}{q}\n   \]".
+    normalized = re.sub(r"\s+", " ", latex).strip()
+    wrapped = f"${normalized}$"
     try:
         width, height, _depth, _glyphs, _rects = mathtext.MathTextParser("path").parse(wrapped, dpi=72, prop=prop)
         path = os.path.join(tmp_dir, f"math-{math_index}.png")
