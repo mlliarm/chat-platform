@@ -11,6 +11,8 @@ response back in a ChatGPT/Claude-style UI.
 > reach the port can spend your credits. See [Security](#security) before
 > exposing it to anything wider than localhost.
 
+![chat-platform UI](images/basic-ui.png)
+
 ## Setup
 
 ```bash
