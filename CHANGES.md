@@ -294,3 +294,58 @@ commit is made.
   since they depend on OpenRouter; `/api/extract` hits the real Flask route.
 - `npm test` runs both tiers; each subsequent frontend change should be run
   against this suite before committing.
+
+## d60e2d3 — 2026-09-06 — Render LaTeX in assistant replies with MathJax
+
+Closes #4.
+
+### Added
+- Assistant replies now render mathematical notation with MathJax v3
+  (`tex-mml-chtml`, loaded from the same cdnjs origin as the other frontend
+  libraries). Inline math is written `$…$` or `\(…\)`, display math `$$…$$`
+  or `\[…\]`.
+- A `marked` inline extension (`mathTokenizer()` in `static/script.js`)
+  claims each math span as its own token before any other inline rule runs.
+  This is what makes the feature work at all: markdown otherwise consumes
+  the LaTeX before MathJax ever sees it — `\[`, `\{` and `\\` are markdown
+  backslash escapes (so `\[…\]` delimiters and matrix/`aligned` row breaks
+  silently vanish), and `_`/`*` inside an expression become emphasis tags.
+  Owning the token leaves the expression body byte-for-byte intact; the
+  renderer HTML-escapes it and re-emits it wrapped in
+  `<span class="math-inline">`/`<span class="math-display">` using MathJax's
+  configured `\(…\)`/`\[…\]` delimiters. A `span` (styled `display: block`)
+  rather than a `div` keeps display math valid inside the `<p>` that marked
+  wraps a paragraph in.
+- Batched typesetting (`scheduleMathTypeset`, 60ms trailing window). The
+  streaming render replaces the whole message body on every token, so an
+  unbatched typeset would re-run MathJax once per token for the rest of a
+  long reply and keep working through a backlog after the stream finished.
+  Elements removed from the DOM before the flush (the error-rollback path)
+  are dropped rather than typeset detached.
+- MathJax loads `async`, so anything rendered before it is ready stays
+  queued and is flushed by a `mathjax-ready` event dispatched from the
+  loader's `pageReady` hook; `window.mathJaxPageReady` covers the race where
+  MathJax finishes before `script.js` has registered its listener.
+
+### Notes
+- Only `\(…\)`/`\[…\]` are configured as MathJax delimiters, never `$`.
+  Since every math span is re-emitted with those, MathJax never scans raw
+  prose, so a bare `$5` in a sentence can't be misread as math. The single-`$`
+  form is still accepted on input, guarded against currency by requiring a
+  non-space after the opener, a non-space before the closer, and no digit
+  after it.
+- Math inside code spans and fenced code blocks is untouched: marked's
+  codespan/code tokenizers consume those first, and MathJax skips `pre`/`code`
+  by default.
+- PDF export is unchanged — equations still export as their LaTeX source.
+
+### Tests
+- `tests/frontend/unit/math-rendering.test.js`: tokenizer delimiter cases,
+  currency rejection, the `start()` offset marked needs to cut its text
+  token, renderer escaping/delimiter output, and the typeset queue
+  (pre-ready queuing, batching, no-math skip, detached-element drop).
+- `tests/frontend/e2e/latex-rendering.spec.js`: real Chromium + real MathJax
+  over a streamed reply — inline math, a multi-line `\begin{aligned}` block
+  (asserting both rows survive, which is the regression a markdown-mangled
+  `\\` would cause), math left literal in a code block, and currency in
+  prose left untypeset.
