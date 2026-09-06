@@ -350,7 +350,7 @@ Closes #4.
   `\\` would cause), math left literal in a code block, and currency in
   prose left untypeset.
 
-## (pending) — 2026-09-06 — hardening pass ahead of making the repo public
+## c85d704 — 2026-09-06 — hardening pass ahead of making the repo public
 
 ### Security
 - The Werkzeug debugger no longer runs by default. `app.py`'s `__main__` block
@@ -380,3 +380,17 @@ Closes #4.
 ### Changed
 - `playwright.config.js` reads `FLASK_BIN` (default `venv/bin/flask`), so CI
   can point the e2e web server at its own environment instead of the repo venv.
+
+## (follow-up to c85d704) — 2026-09-06 — bump pinned GitHub Actions
+
+### Changed
+- Bumped the CI workflow's pinned actions to their current majors —
+  `checkout@v4→v7`, `setup-python@v5→v7`, `setup-node@v4→v7`,
+  `upload-artifact@v4→v7`. The first CI run passed but was annotated by
+  GitHub: the v4/v5 majors target the deprecated Node.js 20 action runtime
+  and were being force-run on Node 24. Every input in use (`python-version`,
+  `node-version`, `cache`, `cache-dependency-path`, `name`, `path`,
+  `retention-days`) exists unchanged in the new majors.
+- Raised the Node version the frontend job tests against from 20 to 24.
+  Node 20 reached end-of-life earlier this year, and 24 matches the version
+  used locally.
