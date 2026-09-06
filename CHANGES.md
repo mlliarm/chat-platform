@@ -381,7 +381,7 @@ Closes #4.
 - `playwright.config.js` reads `FLASK_BIN` (default `venv/bin/flask`), so CI
   can point the e2e web server at its own environment instead of the repo venv.
 
-## (follow-up to c85d704) — 2026-09-06 — bump pinned GitHub Actions
+## 20542fb — 2026-09-06 — bump pinned GitHub Actions
 
 ### Changed
 - Bumped the CI workflow's pinned actions to their current majors —
@@ -394,3 +394,25 @@ Closes #4.
 - Raised the Node version the frontend job tests against from 20 to 24.
   Node 20 reached end-of-life earlier this year, and 24 matches the version
   used locally.
+
+## (pending) — 2026-09-06 — relicense from GPL-3.0 to AGPL-3.0
+
+### Changed
+- `LICENSE` replaced with the verbatim GNU Affero General Public License
+  v3.0 (19 November 2007), retrieved from GitHub's licenses API and checked
+  for completeness — all 17 sections, the `END OF TERMS AND CONDITIONS`
+  terminator, and the appendix template.
+- The practical difference is section 13, "Remote Network Interaction":
+  plain GPL-3.0 triggers its copyleft obligation on *distribution* of the
+  software, so someone could run a modified copy of this app as a hosted
+  service without ever publishing their changes. AGPL-3.0 closes that gap —
+  operating a modified version as a network service obliges the operator to
+  offer its users the corresponding source. That maps to how this project
+  is actually shaped: a web app whose likely derivative is a deployment
+  rather than a redistribution.
+- README's License section updated to describe the network-use obligation.
+
+### Note
+- Section 13's obligation falls on whoever runs a modified version publicly,
+  not on this repository, so no source-offer link is required in the UI as
+  shipped. Anyone deploying a fork for others to use will need to add one.

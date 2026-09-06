@@ -180,5 +180,9 @@ What the code does do:
 
 ## License
 
-[GPL-3.0](LICENSE). You are free to use, modify, and distribute this, but
-distributed derivative works must also be released under the GPL-3.0.
+[AGPL-3.0](LICENSE). You are free to use, modify, and distribute this, but
+derivative works must also be released under the AGPL-3.0 — and because this
+is the *Affero* variant, that obligation extends to network use: if you run a
+modified version as a service others can interact with over a network, you
+must offer those users the source of your modified version (section 13). Plain
+GPL-3.0 would only require this when you distribute the software itself.
