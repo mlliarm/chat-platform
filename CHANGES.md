@@ -253,3 +253,14 @@ commit is made.
   message instead (the raw error is still logged server-side), and any
   other upstream/network error has key-shaped substrings (`sk-...`)
   redacted before it reaches the client.
+
+## ddd4de5 — 2026-09-06 — Fix #1: sanitize non-Latin chat titles in PDF export filenames
+
+### Fixed
+- Exporting a chat whose title was entirely non-Latin (e.g. Greek) crashed
+  the server: the filename regex used `\w`, which is Unicode-aware by
+  default, so those characters passed through unsanitized into the
+  `Content-Disposition` header — and werkzeug's dev server encodes headers
+  as latin-1, raising `UnicodeEncodeError`. The regex now matches ASCII
+  word characters only, so any non-Latin title collapses to underscores
+  like other unsafe characters already did.
