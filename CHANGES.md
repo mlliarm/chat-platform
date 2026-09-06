@@ -416,3 +416,30 @@ Closes #4.
 - Section 13's obligation falls on whoever runs a modified version publicly,
   not on this repository, so no source-offer link is required in the UI as
   shipped. Anyone deploying a fork for others to use will need to add one.
+
+## 6b37e43 — 2026-09-06 — Render LaTeX in PDF export as images instead of raw source
+
+Closes #5.
+
+### Fixed
+- PDF export now rasterizes LaTeX math into images instead of showing the
+  raw source, matching the MathJax-rendered equations the browser has shown
+  since d60e2d3. `markdown_pdf.py` pulls `\(…\)`/`\[…\]`/`$…$`/`$$…$$` spans
+  out of the text before python-markdown sees them — mirroring the browser's
+  `mathTokenizer()`, including leaving code spans and fenced code blocks
+  untouched — then rasterizes each span with matplotlib's `mathtext` (no
+  system LaTeX install required). Inline math is embedded via reportlab's
+  Paragraph `<img>` tag sized to match the surrounding text; display math
+  becomes its own centered paragraph.
+- An expression `mathtext` can't parse (e.g. an `aligned`/`align`
+  environment, which mathtext doesn't support) falls back to showing the
+  raw LaTeX source in a monospace font rather than failing the export.
+
+### Added
+- `matplotlib` to `requirements.txt`, used only for its `mathtext` module
+  (no system LaTeX/dvipng dependency).
+
+### Tests
+- `tests/test_markdown_pdf.py`: inline and display math rendering as images,
+  currency `$5` not mistaken for math, math delimiters inside code spans/
+  fenced blocks left untouched, and the mathtext-unsupported fallback path.
