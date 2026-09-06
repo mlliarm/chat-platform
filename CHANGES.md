@@ -443,3 +443,24 @@ Closes #5.
 - `tests/test_markdown_pdf.py`: inline and display math rendering as images,
   currency `$5` not mistaken for math, math delimiters inside code spans/
   fenced blocks left untouched, and the mathtext-unsupported fallback path.
+
+## d445818 — 2026-09-06 — Fix PDF math rendering for multi-line display equations
+
+### Fixed
+- Display equations still fell back to raw LaTeX source in PDF export when
+  the delimiter and body sat on separate lines — a common shape for real
+  model output, e.g.:
+  ```
+  \[
+     \sqrt{2} = \frac{p}{q}
+  \]
+  ```
+  `_extract_math()` captured this correctly as one span, but the embedded
+  newlines/indentation were passed straight into matplotlib's `mathtext`,
+  whose grammar rejects raw newlines, so every such equation silently hit
+  the unsupported-expression fallback from 6b37e43 — the exact symptom #5
+  was filed for. Since LaTeX math mode treats whitespace as insignificant,
+  `_math_img_tag()` now collapses whitespace runs to a single space before
+  wrapping the expression for `mathtext`.
+- Verified against the actual stored "√2 is irrational" proof from `chat.db`
+  that motivated #5 — every display equation now rasterizes correctly.
