@@ -274,3 +274,23 @@ commit is made.
   server-provided default model (exposed via a `data-default-model`
   attribute on the `<select>`), unless that model has been filtered out
   of the current option list (e.g. by the "free only" toggle).
+
+## dd0eca6 — 2026-09-06 — Add frontend test suite: Vitest unit tests + Playwright e2e tests
+
+### Added
+- A Vitest + jsdom unit tier (`npm run test:unit`) that loads the real
+  `static/script.js` into a fresh jsdom realm per test — no refactor of the
+  script needed, since its top-level `function` declarations attach to
+  `window` when evaluated. Covers time formatting, error-message rewriting,
+  image/attachment content parsing, markdown rendering, the full SSE
+  streaming send flow (including rollback and chat-deleted edge cases), the
+  model picker, chat list/CRUD, composer UI, and export-button state.
+- A Playwright e2e tier (`npm run test:e2e`) that drives a real Chromium
+  browser against a real Flask server (on its own port, with an isolated
+  temp SQLite DB — the real `chat.db` is never touched) for page load,
+  streaming send, image/file attachments, chat management (create, switch,
+  pin, delete), model filtering, error banners, PDF export, and light/dark
+  theming. `/api/chat` and `/api/models` are mocked at the network layer
+  since they depend on OpenRouter; `/api/extract` hits the real Flask route.
+- `npm test` runs both tiers; each subsequent frontend change should be run
+  against this suite before committing.
