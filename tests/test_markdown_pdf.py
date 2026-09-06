@@ -262,6 +262,9 @@ def test_display_latex_becomes_its_own_centered_paragraph() -> None:
     kinds = [type(f).__name__ for f in flowables]
     assert kinds == ["Paragraph", "Paragraph", "Paragraph"]
     given, equation, qed = flowables
+    assert isinstance(given, Paragraph)
+    assert isinstance(equation, Paragraph)
+    assert isinstance(qed, Paragraph)
     assert "<img" in equation.text
     assert equation.style.name == "md-math-display"
     assert given.style.name != "md-math-display"
@@ -272,6 +275,7 @@ def test_bracket_delimited_display_latex_also_renders() -> None:
     flowables = markdown_flowables("\\[E = mc^2\\]")
     assert len(flowables) == 1
     para = flowables[0]
+    assert isinstance(para, Paragraph)
     assert para.style.name == "md-math-display"
     assert "<img" in para.text
 
@@ -289,6 +293,7 @@ def test_math_delimiters_inside_code_are_left_untouched() -> None:
     kinds = [type(f).__name__ for f in flowables]
     assert kinds == ["Paragraph", "Table"]
     para = flowables[0]
+    assert isinstance(para, Paragraph)
     assert "<img" not in para.text
     assert r"\(not math\)" in para.text
     pre = flowables[1]._cellvalues[0][0]  # type: ignore[attr-defined]
