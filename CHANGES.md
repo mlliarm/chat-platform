@@ -242,3 +242,14 @@ commit is made.
 - A confirm dialog before a chat is actually deleted: "This action will
   delete the whole thread and it's irreversible. Are you sure?" — canceling
   leaves the chat untouched, confirming deletes it as before.
+
+## f865bf4 — 2026-09-06 — Fix #3: stop leaking the OpenRouter API key in chat error messages
+
+### Fixed
+- A 402 (insufficient credits) or other non-200 response from OpenRouter's
+  `chat/completions` endpoint was forwarded to the browser as-is, and its
+  `error.message` can embed the account's key — showing up raw in the
+  chat's error banner. Insufficient-credit errors now get a clean, friendly
+  message instead (the raw error is still logged server-side), and any
+  other upstream/network error has key-shaped substrings (`sk-...`)
+  redacted before it reaches the client.
