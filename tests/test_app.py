@@ -345,6 +345,17 @@ def test_export_filename_strips_unsafe_characters(client: FlaskClient, temp_db: 
     assert "/" not in disposition
 
 
+def test_export_filename_strips_non_latin1_characters(client: FlaskClient, temp_db: ModuleType) -> None:
+    """Regression test for #1: a non-Latin title crashed werkzeug's header writer,
+    which encodes headers as latin-1, when the title's characters leaked into
+    the Content-Disposition filename unsanitized."""
+    chat_id = temp_db.create_chat(title="γράψε τις πρώτες 4 στροφές", model="m")
+    resp = client.get(f"/api/chats/{chat_id}/export")
+    assert resp.status_code == 200
+    disposition = resp.headers["Content-Disposition"]
+    disposition.encode("latin-1")  # must not raise UnicodeEncodeError
+
+
 # ---------------------------------------------------------------------------
 # POST /api/chat — validation
 # ---------------------------------------------------------------------------

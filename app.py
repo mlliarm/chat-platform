@@ -266,7 +266,10 @@ def chats_export_pdf(chat_id: str) -> ResponseReturnValue:
     doc = SimpleDocTemplate(buffer, pagesize=LETTER, topMargin=0.75 * inch, bottomMargin=0.75 * inch)
     doc.build(story)
 
-    filename = re.sub(r"[^\w\-]+", "_", chat["title"]).strip("_") or "chat"
+    # ASCII flag matters here: \w is Unicode-aware by default, so a title made
+    # entirely of non-Latin characters (e.g. Greek) would pass through unchanged
+    # and later crash werkzeug's header writer, which encodes headers as latin-1.
+    filename = re.sub(r"[^\w\-]+", "_", chat["title"], flags=re.ASCII).strip("_") or "chat"
     return Response(
         buffer.getvalue(),
         mimetype="application/pdf",
