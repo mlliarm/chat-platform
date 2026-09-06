@@ -464,3 +464,15 @@ Closes #5.
   wrapping the expression for `mathtext`.
 - Verified against the actual stored "√2 is irrational" proof from `chat.db`
   that motivated #5 — every display equation now rasterizes correctly.
+
+## 8f3c20e — 2026-09-06 — Fix mypy attr-defined errors in markdown_pdf math tests
+
+### Fixed
+- CI's `mypy` step was failing on `tests/test_markdown_pdf.py`, introduced by
+  6b37e43/d445818's new math-rendering tests. `markdown_flowables()` returns
+  `list[Flowable]`, so flowables obtained by unpacking or indexing that list
+  are typed as the base `Flowable` class, which has no `.text`/`.style`
+  attributes — only its `Paragraph` subclass does. Four assertions accessed
+  those attributes without first narrowing the type, unlike the rest of the
+  file's tests. Added the same `isinstance(x, Paragraph)` narrowing used
+  elsewhere before each access.
