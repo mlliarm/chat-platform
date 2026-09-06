@@ -25,6 +25,8 @@ Then open http://localhost:5000
 
 ## Running tests
 
+### Backend (pytest)
+
 ```bash
 pip install -r requirements-dev.txt
 pytest
@@ -34,6 +36,36 @@ Tests never touch the real `chat.db` — `db.DB_PATH` is redirected to an
 isolated temp file per test (see `tests/conftest.py`), and all OpenRouter
 network calls are mocked, so no API key or network access is needed to run
 the suite.
+
+### Frontend (Vitest + Playwright)
+
+```bash
+npm install
+npx playwright install chromium  # first time only, needed by the e2e tier
+
+npm test              # runs both tiers below
+npm run test:unit     # Vitest + jsdom unit tests
+npm run test:unit:watch
+npm run test:e2e      # Playwright e2e tests
+```
+
+The unit tier (`tests/frontend/unit/`) loads the real `static/script.js`
+into a fresh jsdom realm per test — no refactor of the script needed, since
+its top-level `function` declarations attach to `window` when evaluated. It
+covers time formatting, error-message rewriting, image/attachment parsing,
+markdown rendering, the full SSE streaming send flow (including rollback
+and chat-deleted edge cases), the model picker, chat list/CRUD, composer
+UI, and export-button state.
+
+The e2e tier (`tests/frontend/e2e/`) drives a real Chromium browser against
+a real Flask server, started automatically via `venv/bin/flask` on a
+dedicated port (5799) with an isolated temp SQLite DB — the real `chat.db`
+is never touched. It covers page load, streaming send, image/file
+attachments, chat management (create, switch, pin, delete), model
+filtering, error banners, PDF export, and light/dark theming. `/api/chat`
+and `/api/models` are mocked at the network layer since they depend on
+OpenRouter; `/api/extract` hits the real Flask route. This tier requires
+the Python venv from [Setup](#setup) to exist with dependencies installed.
 
 ## Type checking
 
