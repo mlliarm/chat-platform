@@ -264,3 +264,13 @@ commit is made.
   as latin-1, raising `UnicodeEncodeError`. The regex now matches ASCII
   word characters only, so any non-Latin title collapses to underscores
   like other unsafe characters already did.
+
+## b5b3c75 — 2026-09-06 — Fix #2: reset model dropdown to default when starting a new chat
+
+### Fixed
+- Clicking "+ New chat" left the model dropdown on whatever model the
+  previously viewed chat used instead of returning to the configured
+  default. `startNewChat()` now resets the selection back to the
+  server-provided default model (exposed via a `data-default-model`
+  attribute on the `<select>`), unless that model has been filtered out
+  of the current option list (e.g. by the "free only" toggle).
