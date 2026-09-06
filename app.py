@@ -54,6 +54,29 @@ def openrouter_headers() -> dict[str, str]:
     }
 
 
+_SECRET_KEY_RE = re.compile(r"sk-[A-Za-z0-9_-]{6,}")
+
+
+def sanitize_upstream_error(status_code: int, raw_text: str) -> str:
+    """Never let a raw upstream error (which can embed the API key) reach the client."""
+    if status_code == 402:
+        app.logger.error("OpenRouter 402 (insufficient credits): %s", raw_text)
+        return json.dumps(
+            {
+                "error": {
+                    "message": (
+                        "This model needs more credits than are currently available. "
+                        "Try a free model, or add credits to the OpenRouter account."
+                    )
+                }
+            }
+        )
+    redacted = _SECRET_KEY_RE.sub("[redacted]", raw_text)
+    if redacted != raw_text:
+        app.logger.error("Redacted a key-like value from an upstream error: %s", raw_text)
+    return redacted
+
+
 @app.route("/")
 def index() -> str:
     return render_template("index.html", default_model=DEFAULT_MODEL)
@@ -336,7 +359,8 @@ def chat() -> ResponseReturnValue:
                 timeout=120,
             ) as upstream:
                 if upstream.status_code != 200:
-                    yield f"data: {json.dumps(rollback_payload(upstream.text))}\n\n"
+                    safe_error = sanitize_upstream_error(upstream.status_code, upstream.text)
+                    yield f"data: {json.dumps(rollback_payload(safe_error))}\n\n"
                     return
 
                 # OpenRouter sends UTF-8 without a charset param on the SSE stream;
@@ -359,12 +383,13 @@ def chat() -> ResponseReturnValue:
                         pass
                     yield f"{line}\n\n"
         except requests.RequestException as exc:
+            safe_msg = _SECRET_KEY_RE.sub("[redacted]", str(exc))
             if assistant_text:
                 # Streaming had already started producing real content before the
                 # connection died — keep the user message, just report the error.
-                yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+                yield f"data: {json.dumps({'error': safe_msg})}\n\n"
             else:
-                yield f"data: {json.dumps(rollback_payload(str(exc)))}\n\n"
+                yield f"data: {json.dumps(rollback_payload(safe_msg))}\n\n"
             return
         finally:
             if assistant_text:

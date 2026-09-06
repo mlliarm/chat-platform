@@ -635,6 +635,55 @@ def test_chat_failure_leaves_no_trace_in_next_turns_history(
         assert not (isinstance(msg["content"], list))
 
 
+# ---------------------------------------------------------------------------
+# POST /api/chat — issue #3: upstream errors must never leak the API key
+# ---------------------------------------------------------------------------
+
+
+def test_chat_insufficient_credits_returns_friendly_message_without_key(
+    client: FlaskClient, temp_db: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The exact bug from issue #3: a 402 from OpenRouter must not surface the raw key."""
+    leaked_key = "sk-or-v1-f2912345secretkeystufff00c15"
+    error_body = json.dumps(
+        {
+            "error": {
+                "message": (
+                    f"This request requires more credits, or fewer max_tokens. "
+                    f"Your key ({leaked_key}) has 0 credits remaining."
+                ),
+                "code": 402,
+            }
+        }
+    )
+    monkeypatch.setattr(app_module.requests, "post", lambda *a, **k: FakeStreamResponse(402, text=error_body))
+
+    resp = client.post("/api/chat", json={"message": "hi", "chat_id": None})
+    raw = resp.get_data(as_text=True)
+
+    assert leaked_key not in raw
+    events = parse_sse(raw)
+    error_event = events[-1]
+    assert error_event["rolled_back"] is True
+    assert "credits" in json.loads(error_event["error"])["error"]["message"].lower()
+
+
+def test_chat_upstream_error_redacts_leaked_key_for_other_status_codes(
+    client: FlaskClient, temp_db: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Defense-in-depth: any status code with a key-shaped string gets it stripped."""
+    leaked_key = "sk-or-v1-f2912345secretkeystufff00c15"
+    error_body = json.dumps({"error": {"message": f"Internal error for key {leaked_key}", "code": 500}})
+    monkeypatch.setattr(app_module.requests, "post", lambda *a, **k: FakeStreamResponse(500, text=error_body))
+
+    resp = client.post("/api/chat", json={"message": "hi", "chat_id": None})
+    raw = resp.get_data(as_text=True)
+
+    assert leaked_key not in raw
+    assert "[redacted]" in raw
+    assert "Internal error for key" in raw
+
+
 def test_chat_connection_error_before_any_content_rolls_back(
     client: FlaskClient, temp_db: ModuleType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
