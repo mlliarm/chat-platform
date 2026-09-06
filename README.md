@@ -1,4 +1,4 @@
-# Local OpenRouter Chat
+# chat-platform: a local LLM ChAT 🐱
 
 [![CI](https://github.com/mlliarm/chat-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/mlliarm/chat-platform/actions/workflows/ci.yml)
 
