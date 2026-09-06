@@ -5,3 +5,4 @@ pypdf==6.16.2
 reportlab==5.0.1
 Markdown==3.10.3
 Pygments==2.21.0
+matplotlib==3.11.1

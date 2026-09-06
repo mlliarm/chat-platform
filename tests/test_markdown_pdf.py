@@ -237,3 +237,71 @@ def test_malformed_html_fallback_still_returns_readable_text(monkeypatch: pytest
     para = flowables[0]
     assert isinstance(para, Paragraph)
     assert "plain fallback text" in para.text
+
+
+def test_inline_latex_renders_as_an_image_not_raw_source() -> None:
+    flowables = markdown_flowables(r"The area is \(\pi r^2\).")
+    assert len(flowables) == 1
+    para = flowables[0]
+    assert isinstance(para, Paragraph)
+    assert "<img" in para.text
+    assert r"\(\pi r^2\)" not in para.text
+    assert "The area is" in para.text
+
+
+def test_dollar_delimited_inline_latex_also_renders_as_an_image() -> None:
+    flowables = markdown_flowables(r"Let $x^2$ be a square.")
+    para = flowables[0]
+    assert isinstance(para, Paragraph)
+    assert "<img" in para.text
+    assert "$x^2$" not in para.text
+
+
+def test_display_latex_becomes_its_own_centered_paragraph() -> None:
+    flowables = markdown_flowables("Given:\n\n$$a^2 + b^2 = c^2$$\n\nQ.E.D.")
+    kinds = [type(f).__name__ for f in flowables]
+    assert kinds == ["Paragraph", "Paragraph", "Paragraph"]
+    given, equation, qed = flowables
+    assert "<img" in equation.text
+    assert equation.style.name == "md-math-display"
+    assert given.style.name != "md-math-display"
+    assert qed.style.name != "md-math-display"
+
+
+def test_bracket_delimited_display_latex_also_renders() -> None:
+    flowables = markdown_flowables("\\[E = mc^2\\]")
+    assert len(flowables) == 1
+    para = flowables[0]
+    assert para.style.name == "md-math-display"
+    assert "<img" in para.text
+
+
+def test_currency_dollar_amount_is_not_mistaken_for_math() -> None:
+    flowables = markdown_flowables("This costs $5, not math.")
+    para = flowables[0]
+    assert isinstance(para, Paragraph)
+    assert "<img" not in para.text
+    assert "This costs $5, not math." in para.text
+
+
+def test_math_delimiters_inside_code_are_left_untouched() -> None:
+    flowables = markdown_flowables("Inline `\\(not math\\)` and:\n\n```\n$also not math$\n```")
+    kinds = [type(f).__name__ for f in flowables]
+    assert kinds == ["Paragraph", "Table"]
+    para = flowables[0]
+    assert "<img" not in para.text
+    assert r"\(not math\)" in para.text
+    pre = flowables[1]._cellvalues[0][0]  # type: ignore[attr-defined]
+    assert strip_font_tags(pre.text) == "$also not math$"
+
+
+def test_latex_unsupported_by_the_renderer_falls_back_to_raw_source() -> None:
+    # matplotlib's mathtext (used to rasterize LaTeX with no system LaTeX
+    # install required) doesn't understand `aligned`/`align` environments —
+    # this should degrade to showing the LaTeX source, not blow up the export.
+    flowables = markdown_flowables(r"\(\begin{aligned}a &= b\end{aligned}\)")
+    para = flowables[0]
+    assert isinstance(para, Paragraph)
+    assert "<img" not in para.text
+    assert "begin" in para.text
+    assert "aligned" in para.text
